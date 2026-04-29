@@ -45,6 +45,18 @@ class MessageService {
         }
         return await this._sendScrapeMessage(message);
     }
+
+    /**
+     * 发送任务完成消息
+     * @param {object} task - 任务信息
+     * @returns {Promise<boolean>} - 发送结果
+     */
+    async sendTaskMessage(task) {
+        if (!this.enabled) {
+            return false;
+        }
+        return await this._sendTaskMessage(task);
+    }
     /**
      * 实际发送消息的方法，需要被子类实现
      * @param {string} message - 要发送的消息内容
@@ -61,6 +73,16 @@ class MessageService {
      */
     async _sendScrapeMessage(message) {
         throw new Error('_sendScrapeMessage method must be implemented by subclass');
+    }
+
+    /**
+     * 实际发送任务消息的方法，需要被子类实现
+     * @param {object} task - 任务信息
+     * @returns {Promise<boolean>} - 发送结果
+     */
+    async _sendTaskMessage(task) {
+        // 默认不处理
+        return true;
     }
 
     /**

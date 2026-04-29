@@ -62,6 +62,11 @@ class ConfigService {
         webhook: '',            // webhook编码，仅在channel为webhook时需要
         to: ''                  // 好友令牌，用于指定接收消息的用户
     },
+      smartStrm: {
+        enable: false,
+        webhook: '',
+        taskMapping: ''
+      },
       system: {
         username: 'admin',
         password: 'admin',

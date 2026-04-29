@@ -4,6 +4,7 @@ const WxPusherService = require('./WxPusherService');
 const BarkService = require('./BarkService');
 const PushPlusService = require('./PushPlusService');
 const CustomPushService = require('./CustomPushService');
+const SmartStrmService = require('./SmartStrmService');
 class MessageManager {
     constructor() {
         this.services = [];
@@ -64,6 +65,13 @@ class MessageManager {
             this.services.push(pushPlusService);
         }
 
+        // SmartStrm配置
+        if (config.smartStrm?.enabled) {
+            const smartStrmService = new SmartStrmService(config.smartStrm);
+            smartStrmService.initialize();
+            this.services.push(smartStrmService);
+        }
+
         // 自定义推送
         this.services.push(new CustomPushService(config.customPush));
     }
@@ -88,6 +96,18 @@ class MessageManager {
     async sendScrapeMessage(message) {
         const results = await Promise.all(
             this.services.map(service => service.sendScrapeMessage(message))
+        );
+        return results;
+    }
+
+    /**
+     * 发送任务完成消息到所有已启用的服务
+     * @param {object} task - 任务信息
+     * @returns {Promise<Array<boolean>>} - 各个服务的发送结果
+     */
+    async sendTaskMessage(task) {
+        const results = await Promise.all(
+            this.services.map(service => service.sendTaskMessage(task))
         );
         return results;
     }

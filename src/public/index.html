@@ -443,6 +443,15 @@
                             <input type="text" id="pushplusWebhook" placeholder="仅在选择 WebHook 渠道时需要填写">
                             <label for="pushplusTo">好友令牌(选填)</label>
                             <input type="text" id="pushplusTo" placeholder="好友令牌">
+
+                            <label>
+                                <input type="checkbox" id="enableSmartStrm">
+                                SmartStrm 通知
+                            </label>
+                            <input type="text" id="smartStrmWebhook" placeholder="SmartStrm Webhook URL">
+                            <label for="smartStrmTaskMapping">任务映射(可选)</label>
+                            <input type="text" id="smartStrmTaskMapping" placeholder="例如: 动漫:tianyi_动漫;电影:tianyi_电影">
+                            <small class="form-text">资源名包含对应关键字时，将发送映射的任务名。多个映射用分号分隔。</small>
                         </div>
                     </div>
                 </div>

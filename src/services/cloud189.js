@@ -1,4 +1,4 @@
-const { CloudClient, FileTokenStore } = require('../../vender/cloud189-sdk/dist');
+const { CloudClient, FileTokenStore } = require('cloud189-sdk');
 const { logTaskEvent } = require('../utils/logUtils');
 const crypto = require('crypto');
 const got = require('got');
@@ -22,7 +22,7 @@ class Cloud189Service {
         }
         if (!account.password && account.cookies) {
             _options.ssonCookie = account.cookies
-            _options.password = null   
+            _options.password = null
         }
         _options.proxy = ProxyUtil.getProxy('cloud189')
         this.client = new CloudClient(_options);
@@ -38,11 +38,11 @@ class Cloud189Service {
 
     // 封装统一请求
     async request(action, body) {
-        body.headers = {'Accept': 'application/json;charset=UTF-8'}
+        body.headers = { 'Accept': 'application/json;charset=UTF-8' }
         try {
             const noCache = Math.random().toString()
-            return await this.client.request('https://cloud.189.cn' + action+'?noCach='+noCache, body).json();
-        }catch (error) {
+            return await this.client.request('https://cloud.189.cn' + action + '?noCach=' + noCache, body).json();
+        } catch (error) {
             if (error instanceof got.HTTPError) {
                 const responseBody = JSON.parse(error.response.body);
                 if (responseBody.res_code === "ShareAuditWaiting") {
@@ -62,41 +62,41 @@ class Cloud189Service {
                     }
                 }
                 logTaskEvent('请求天翼云盘接口失败:' + error.response.body);
-            }else if (error instanceof got.TimeoutError) {
+            } else if (error instanceof got.TimeoutError) {
                 logTaskEvent('请求天翼云盘接口失败: 请求超时, 请检查是否能访问天翼云盘');
-            }else if(error instanceof got.RequestError) {
+            } else if (error instanceof got.RequestError) {
                 logTaskEvent('请求天翼云盘接口异常: ' + error.message);
-            }else{
+            } else {
                 logTaskEvent('其他异常:' + error.message)
             }
             console.log(error)
             return null
         }
     }
-    
+
     async getUserSizeInfo() {
         try {
-            return await this.client.getUserSizeInfo()    
-        }catch(error) {
+            return await this.client.getUserSizeInfo()
+        } catch (error) {
             if (error instanceof got.HTTPError) {
                 const responseBody = error.response.body;
-                logTaskEvent('请求天翼云盘接口失败:'+ responseBody);
-            }else if (error instanceof got.TimeoutError) {
+                logTaskEvent('请求天翼云盘接口失败:' + responseBody);
+            } else if (error instanceof got.TimeoutError) {
                 logTaskEvent('请求天翼云盘接口失败: 请求超时, 请检查是否能访问天翼云盘');
-            }else if(error instanceof got.RequestError) {
+            } else if (error instanceof got.RequestError) {
                 logTaskEvent('请求天翼云盘接口异常: ' + error.message);
             } else {
                 // 捕获其他类型的错误
-                logTaskEvent('获取用户空间信息失败:' +  error.message);
+                logTaskEvent('获取用户空间信息失败:' + error.message);
             }
             console.log(error)
             return null
         }
-    
+
     }
     // 解析分享链接获取文件信息
     async getShareInfo(shareCode) {
-        return await this.request('/api/open/share/getShareInfoByCodeV2.action' , {
+        return await this.request('/api/open/share/getShareInfoByCodeV2.action', {
             method: 'GET',
             searchParams: { shareCode }
         })
@@ -131,31 +131,31 @@ class Cloud189Service {
 
     // 搜索个人网盘文件
     async searchFiles(filename) {
-        return await this.request('/api/open/share/getShareInfoByCodeV2.action' , {
+        return await this.request('/api/open/share/getShareInfoByCodeV2.action', {
             method: 'GET',
-            searchParams: { 
+            searchParams: {
                 folderId: '-11',
                 pageSize: '1000',
                 pageNum: '1',
                 recursive: 1,
                 mediaType: 0,
                 filename
-             }
+            }
         })
     }
 
     // 获取个人网盘文件列表
     async listFiles(folderId) {
-        return await this.request('/api/open/file/listFiles.action' , {
+        return await this.request('/api/open/file/listFiles.action', {
             method: 'GET',
-            searchParams: { 
+            searchParams: {
                 folderId,
                 mediaType: 0,
                 orderBy: 'lastOpTime',
                 descending: true,
                 pageNum: 1,
                 pageSize: 1000
-             }
+            }
         })
     }
 
@@ -170,7 +170,7 @@ class Cloud189Service {
     }
     // 查询转存任务状态
     async checkTaskStatus(taskId, type = "SHARE_SAVE") {
-        const params = {taskId, type}
+        const params = { taskId, type }
         return await this.request('/api/open/batch/checkBatchTask.action', {
             method: 'POST',
             form: params,
@@ -179,7 +179,7 @@ class Cloud189Service {
 
     // 获取目录树节点
     async getFolderNodes(folderId = '-11') {
-        return await this.request('/api/portal/getObjectFolderNodes.action' , {
+        return await this.request('/api/portal/getObjectFolderNodes.action', {
             method: 'POST',
             form: {
                 id: folderId,
@@ -191,7 +191,7 @@ class Cloud189Service {
 
     // 新建目录
     async createFolder(folderName, parentFolderId) {
-        return await this.request('/api/open/file/createFolder.action' , {
+        return await this.request('/api/open/file/createFolder.action', {
             method: 'POST',
             form: {
                 parentFolderId: parentFolderId,
@@ -200,9 +200,9 @@ class Cloud189Service {
         })
     }
 
-     // 验证分享链接访问码
-     async checkAccessCode(shareCode, accessCode) {
-        return await this.request('/api/open/share/checkAccessCode.action' , {
+    // 验证分享链接访问码
+    async checkAccessCode(shareCode, accessCode) {
+        return await this.request('/api/open/share/checkAccessCode.action', {
             method: 'GET',
             searchParams: {
                 shareCode,
@@ -213,7 +213,7 @@ class Cloud189Service {
     }
     // 获取冲突的文件 
     async getConflictTaskInfo(taskId) {
-        return await this.request('/api/open/batch/getConflictTaskInfo.action' , {
+        return await this.request('/api/open/batch/getConflictTaskInfo.action', {
             method: 'POST',
             json: {
                 taskId,
@@ -223,8 +223,8 @@ class Cloud189Service {
     }
 
     // 处理冲突 taskInfos: [{"fileId":"","fileName":"","isConflict":1,"isFolder":0,"dealWay":1}]
-    async manageBatchTask(taskId,targetFolderId, taskInfos) {
-        return await this.request('/api/open/batch/manageBatchTask.action' , {
+    async manageBatchTask(taskId, targetFolderId, taskInfos) {
+        return await this.request('/api/open/batch/manageBatchTask.action', {
             method: 'POST',
             json: {
                 taskId,
@@ -236,7 +236,7 @@ class Cloud189Service {
     }
 
     // 重命名文件
-    async renameFile(fileId, destFileName) { 
+    async renameFile(fileId, destFileName) {
         const response = await this.request('/api/open/file/renameFile.action', {
             method: 'POST',
             form: {
@@ -262,7 +262,7 @@ class Cloud189Service {
     }
     // 获取网盘直链
     async getDownloadLink(fileId, shareId = null) {
-        const type = shareId? 4: 2
+        const type = shareId ? 4 : 2
         const response = await this.request('/api/portal/getNewVlcVideoPlayUrl.action', {
             method: 'GET',
             searchParams: {

@@ -45,6 +45,11 @@ class MessageUtil {
                 webhook: settings.pushplus?.webhook || '',
                 to: settings.pushplus?.to || '',
             },
+            smartStrm: {
+                enabled: settings.smartStrm?.enable || false,
+                webhook: settings.smartStrm?.webhook || '',
+                taskMapping: settings.smartStrm?.taskMapping || '',
+            },
             customPush: settings.customPush || []
         });
     }
@@ -61,6 +66,10 @@ class MessageUtil {
     // 发送刮削消息
     async sendScrapeMessage(message) {
         await messageManager.sendScrapeMessage(message);
+    }
+    // 发送任务完成消息
+    async sendTaskMessage(task) {
+        await messageManager.sendTaskMessage(task);
     }
 }
 

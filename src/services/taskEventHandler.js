@@ -20,7 +20,10 @@ class TaskEventHandler {
             await this._handleStrmGeneration(taskCompleteEventDto);
             await this._handleAlistCache(taskCompleteEventDto);
             await this._handleMediaScraping(taskCompleteEventDto);
-            this._handleEmbyNotification(taskCompleteEventDto)
+            await this._handleEmbyNotification(taskCompleteEventDto);
+            
+            // 发送任务完成通知(例如 SmartStrm)，需要放在重命名等处理之后
+            this.messageUtil.sendTaskMessage(task);
         } catch (error) {
             console.error(error);
             logTaskEvent(`任务完成后处理失败: ${error.message}`);

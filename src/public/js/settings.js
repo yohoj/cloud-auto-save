@@ -94,6 +94,11 @@ async function loadSettings() {
             document.getElementById('pushplusWebhook').value = settings.pushplus?.webhook || '';
             document.getElementById('pushplusTo').value = settings.pushplus?.to || '';
 
+            // smartStrm
+            document.getElementById('enableSmartStrm').checked = settings.smartStrm?.enable || false;
+            document.getElementById('smartStrmWebhook').value = settings.smartStrm?.webhook || '';
+            document.getElementById('smartStrmTaskMapping').value = settings.smartStrm?.taskMapping || '';
+
             customPushConfigs = settings.customPush || [];
         }
     } catch (error) {
@@ -169,6 +174,11 @@ async function saveSettings() {
             channel: document.getElementById('pushplusChannel').value,
             webhook: document.getElementById('pushplusWebhook').value,
             to: document.getElementById('pushplusTo').value
+        },
+        smartStrm: {
+            enable: document.getElementById('enableSmartStrm').checked,
+            webhook: document.getElementById('smartStrmWebhook').value,
+            taskMapping: document.getElementById('smartStrmTaskMapping').value
         },
         customPush: customPushConfigs
     };
