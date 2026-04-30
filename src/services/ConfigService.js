@@ -67,6 +67,15 @@ class ConfigService {
         webhook: '',
         taskMapping: ''
       },
+      fntv: {
+        enable: false,
+        base_url: '',       // 飞牛影视服务器地址，例如 http://10.0.0.6:5666
+        username: '',       // 飞牛影视用户名
+        password: '',       // 飞牛影视密码
+        secret_string: '',  // 飞牛影视密钥字符串
+        api_key: '',        // 飞牛影视 API 密钥
+        mdb_mapping: '',    // 媒体库映射，格式：关键字:mdb_name，支持换行或分号分隔
+      },
       system: {
         username: 'admin',
         password: 'admin',

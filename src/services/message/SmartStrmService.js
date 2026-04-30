@@ -1,5 +1,6 @@
 const got = require('got');
 const MessageService = require('./MessageService');
+const { logTaskEvent } = require('../../utils/logUtils');
 
 class SmartStrmService extends MessageService {
     /**
@@ -31,7 +32,7 @@ class SmartStrmService extends MessageService {
 
             const rawTaskName = (task.shareFolderName ? `${task.resourceName}/${task.shareFolderName}` : task.resourceName).replace(/\(根\)/g, '').trim();
             let mappedName = rawTaskName;
-
+            logTaskEvent("SmartStrm task:" + rawTaskName);
             // 解析任务映射
             const mappings = {};
             if (this.config.taskMapping) {
@@ -68,11 +69,11 @@ class SmartStrmService extends MessageService {
                     request: 5000
                 }
             }).json();
-            console.log("SmartStrm Webhook 响应结果:", response);
+            logTaskEvent("SmartStrm Webhook 响应结果:" + JSON.stringify(response));
 
             return true;
         } catch (error) {
-            console.error('SmartStrm Webhook 推送异常:', error.message);
+            logTaskEvent('SmartStrm Webhook 推送异常:' + error.message);
             return false;
         }
     }

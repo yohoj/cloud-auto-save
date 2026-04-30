@@ -608,6 +608,35 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="form-group">
+                    <label>飞牛影视 (FNTV) 设置</label>
+                    <div class="push-settings">
+                        <div class="push-item">
+                            <label>
+                                <input type="checkbox" id="enableFntv">
+                                启用飞牛影视入库通知
+                            </label>
+                            <label for="fntvBaseUrl">服务器地址</label>
+                            <input type="text" id="fntvBaseUrl" placeholder="例如: http://10.0.0.6:5666">
+                            <label for="fntvUsername">用户名</label>
+                            <input type="text" id="fntvUsername" placeholder="飞牛影视用户名">
+                            <label for="fntvPassword">密码</label>
+                            <input type="password" id="fntvPassword" placeholder="飞牛影视密码">
+                            <label for="fntvSecretString">密钥字符串 (secret_string)</label>
+                            <input type="text" id="fntvSecretString" placeholder="飞牛影视 secret_string">
+                            <label for="fntvApiKey">API Key</label>
+                            <input type="text" id="fntvApiKey" placeholder="飞牛影视 API Key">
+                            <label for="fntvMdbMapping">媒体库映射</label>
+                            <textarea id="fntvMdbMapping" rows="4" placeholder="每行一条规则，格式：路径关键字:媒体库名称&#10;例如：&#10;动漫:动漫&#10;电影:电影"></textarea>
+                            <div style="display:flex; gap:8px; margin-top:6px;">
+                                <button type="button" class="btn-default" onclick="testFntvConnection()" id="fntvTestBtn">测试连接</button>
+                                <span id="fntvTestResult" style="font-size:12px;align-self:center;"></span>
+                            </div>
+                            <small class="form-text">任务的存储路径或资源名包含关键字时，通知对应媒体库刷新。每行一条，冒号前为路径关键字，冒号后为飞牛影视媒体库名称。</small>
+                        </div>
+                    </div>
+                </div>
                 <div class="form-group">
                     <label>CloudSaver 设置</label>
                     <div class="proxy-settings" style="border: 1px solid var(--border-color);padding: 12px;">

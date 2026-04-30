@@ -50,6 +50,15 @@ class MessageUtil {
                 webhook: settings.smartStrm?.webhook || '',
                 taskMapping: settings.smartStrm?.taskMapping || '',
             },
+            fntv: {
+                enabled: settings.fntv?.enable || false,
+                base_url: settings.fntv?.base_url || '',
+                username: settings.fntv?.username || '',
+                password: settings.fntv?.password || '',
+                secret_string: settings.fntv?.secret_string || '',
+                api_key: settings.fntv?.api_key || '',
+                mdb_mapping: settings.fntv?.mdb_mapping || '',
+            },
             customPush: settings.customPush || []
         });
     }

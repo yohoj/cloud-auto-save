@@ -60,6 +60,15 @@ async function loadSettings() {
             document.getElementById('embyServer').value = settings.emby?.serverUrl || '';
             document.getElementById('embyApiKey').value = settings.emby?.apiKey || '';
 
+            // 飞牛影视设置
+            document.getElementById('enableFntv').checked = settings.fntv?.enable || false;
+            document.getElementById('fntvBaseUrl').value = settings.fntv?.base_url || '';
+            document.getElementById('fntvUsername').value = settings.fntv?.username || '';
+            document.getElementById('fntvPassword').value = settings.fntv?.password || '';
+            document.getElementById('fntvSecretString').value = settings.fntv?.secret_string || '';
+            document.getElementById('fntvApiKey').value = settings.fntv?.api_key || '';
+            document.getElementById('fntvMdbMapping').value = settings.fntv?.mdb_mapping || '';
+
             // tg机器人设置
             document.getElementById('enableTgBot').checked = settings.telegram?.bot?.enable || false;
             document.getElementById('tgBotToken').value = settings.telegram?.bot?.botToken || '';

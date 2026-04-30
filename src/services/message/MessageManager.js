@@ -5,6 +5,7 @@ const BarkService = require('./BarkService');
 const PushPlusService = require('./PushPlusService');
 const CustomPushService = require('./CustomPushService');
 const SmartStrmService = require('./SmartStrmService');
+const FntvService = require('./FntvService');
 class MessageManager {
     constructor() {
         this.services = [];
@@ -70,6 +71,13 @@ class MessageManager {
             const smartStrmService = new SmartStrmService(config.smartStrm);
             smartStrmService.initialize();
             this.services.push(smartStrmService);
+        }
+
+        // 飞牛影视配置
+        if (config.fntv?.enabled) {
+            const fntvService = new FntvService(config.fntv);
+            fntvService.initialize();
+            this.services.push(fntvService);
         }
 
         // 自定义推送

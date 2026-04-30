@@ -42,6 +42,15 @@ async function saveMediaSettings() {
             enable: document.getElementById('enableAlist').checked,
             baseUrl: document.getElementById('alistServer').value,
             apiKey: document.getElementById('alistApiKey').value
+        },
+        fntv: {
+            enable: document.getElementById('enableFntv').checked,
+            base_url: document.getElementById('fntvBaseUrl').value,
+            username: document.getElementById('fntvUsername').value,
+            password: document.getElementById('fntvPassword').value,
+            secret_string: document.getElementById('fntvSecretString').value,
+            api_key: document.getElementById('fntvApiKey').value,
+            mdb_mapping: document.getElementById('fntvMdbMapping').value,
         }
     };
 
@@ -59,5 +68,35 @@ async function saveMediaSettings() {
         }
     } catch (error) {
         message.warning('保存失败: ' + error.message);
+    }
+}
+
+async function testFntvConnection() {
+    const btn = document.getElementById('fntvTestBtn');
+    const resultEl = document.getElementById('fntvTestResult');
+    btn.disabled = true;
+    btn.textContent = '测试中...';
+    resultEl.textContent = '';
+    resultEl.style.color = '';
+
+    try {
+        // 先保存当前填写的配置，确保后端读取最新值
+        await saveMediaSettings();
+
+        const response = await fetch('/api/fntv/test', { method: 'POST' });
+        const result = await response.json();
+        if (result.success) {
+            resultEl.textContent = '✅ ' + result.data;
+            resultEl.style.color = 'var(--success-color, #52c41a)';
+        } else {
+            resultEl.textContent = '❌ ' + result.error;
+            resultEl.style.color = 'var(--error-color, #ff4d4f)';
+        }
+    } catch (error) {
+        resultEl.textContent = '❌ ' + error.message;
+        resultEl.style.color = 'var(--error-color, #ff4d4f)';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '测试连接';
     }
 }

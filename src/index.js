@@ -604,6 +604,50 @@ AppDataSource.initialize().then(async () => {
         res.json({success: true, data: null})
     })
 
+    // 飞牛影视连接测试：解析映射第一条并刷新对应媒体库
+    app.post('/api/fntv/test', async (req, res) => {
+        try {
+            const Fnv = require('./services/fntv');
+            const fntvConfig = ConfigService.getConfigValue('fntv') || {};
+            const { base_url, username, password, secret_string, api_key, mdb_mapping } = fntvConfig;
+
+            if (!base_url || !username || !password || !secret_string || !api_key) {
+                return res.json({ success: false, error: '请先填写完整的飞牛影视连接信息' });
+            }
+
+            // 解析 mdb_mapping 取第一条规则的 mdb_name
+            const mappingStr = (mdb_mapping || '').trim();
+            let mdbName = null;
+            if (mappingStr) {
+                const rules = mappingStr.split(/[;\n]+/);
+                for (const rule of rules) {
+                    const colonIdx = rule.indexOf(':');
+                    if (colonIdx === -1) continue;
+                    const name = rule.substring(colonIdx + 1).trim();
+                    if (name) { mdbName = name; break; }
+                }
+            }
+            if (!mdbName) {
+                return res.json({ success: false, error: '请在媒体库映射中至少填写一条规则' });
+            }
+
+            const fnv = await Fnv.create({ base_url, username, password, secret_string, api_key });
+            if (!fnv.isActive) {
+                return res.json({ success: false, error: '登录失败，请检查用户名、密码、密钥等配置' });
+            }
+
+            const task = {
+                addition: {
+                    fnv: { auto_refresh: true, mdb_name: mdbName, mdb_dir_list: '' }
+                }
+            };
+            await fnv.run(task);
+            res.json({ success: true, data: `已向媒体库 "${mdbName}" 发送刷新指令` });
+        } catch (error) {
+            res.json({ success: false, error: error.message });
+        }
+    })
+
     app.get('/api/version', (req, res) => {
         res.json({ version: currentVersion });
     });
