@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const got = require("got");
 
 // 飞牛影视插件
 // 该插件用于与飞牛影视服务器API交互，支持自动刷新媒体库
@@ -161,20 +162,25 @@ class Fnv {
 
       let responseData;
       try {
-        const response = await fetch(url, {
+        const isGet = normalizedMethod === "get";
+        const gotOptions = {
           method: normalizedMethod.toUpperCase(),
           headers,
-          body:
-            normalizedMethod === "get"
-              ? undefined
-              : this._serializeData(data !== null ? data : {}),
-        });
-
-        if (!response.ok) {
-          throw new Error(`${response.status} ${response.statusText}`);
+          timeout: { request: 10000 },
+        };
+        if (isGet) {
+          if (params) {
+            gotOptions.searchParams = params;
+          }
+        } else {
+          gotOptions.body = this._serializeData(data !== null ? data : {});
         }
 
-        responseData = await response.json();
+        const response = await got(url.toString(), gotOptions);
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw new Error(`${response.statusCode} ${response.statusMessage}`);
+        }
+        responseData = JSON.parse(response.body);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.log(`飞牛影视: 请求 ${url.toString()} 时出错: ${message}`);
