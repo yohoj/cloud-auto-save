@@ -802,8 +802,8 @@ body::before {
     min-width: 0 !important;
     min-height: 42px !important;
     justify-content: flex-start !important;
-    gap: 10px !important;
-    padding: 0 12px !important;
+    gap: 0 !important;
+    padding: 0 16px !important;
     border: 1px solid transparent !important;
     border-radius: 14px !important;
     color: var(--tahoe-muted) !important;
@@ -811,18 +811,23 @@ body::before {
     box-shadow: none !important;
     font-size: 14px !important;
     font-weight: 600 !important;
+    position: relative !important;
 }
 
 .tab::before {
-    width: 22px !important;
-    height: 22px !important;
-    flex: 0 0 22px;
-    border-radius: 7px !important;
-    opacity: 1 !important;
-    background:
-        linear-gradient(145deg, rgba(255, 255, 255, 0.84), rgba(255, 255, 255, 0.2)),
-        rgba(118, 118, 128, 0.14) !important;
-    box-shadow: inset 0 0 0 1px var(--tahoe-line);
+    content: "" !important;
+    position: absolute !important;
+    left: 8px !important;
+    top: 50% !important;
+    width: 4px !important;
+    height: 18px !important;
+    flex: none !important;
+    border-radius: 999px !important;
+    opacity: 0 !important;
+    background: var(--tahoe-blue) !important;
+    box-shadow: 0 0 16px rgba(0, 122, 255, 0.28) !important;
+    transform: translateY(-50%) scaleY(0.6);
+    transition: opacity 0.18s ease, transform 0.18s ease;
 }
 
 .tab.active {
@@ -842,9 +847,18 @@ body::before {
 }
 
 .tab.active::before {
-    background:
-        linear-gradient(145deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.18)),
-        var(--tahoe-blue) !important;
+    opacity: 1 !important;
+    transform: translateY(-50%) scaleY(1);
+}
+
+.tab:not(.active):hover {
+    color: var(--tahoe-ink) !important;
+    background: rgba(255, 255, 255, 0.24) !important;
+}
+
+.tab:not(.active):hover::before {
+    opacity: 0.32 !important;
+    transform: translateY(-50%) scaleY(0.75);
 }
 
 .tab-content {
@@ -887,14 +901,14 @@ body::before {
     top: auto !important;
     z-index: 30;
     margin-bottom: 16px !important;
-    padding: 12px !important;
+    padding: 14px !important;
 }
 
 .operation-group {
     display: grid !important;
-    grid-template-columns: max-content minmax(280px, 1fr);
+    grid-template-columns: max-content minmax(360px, 1fr);
     align-items: center !important;
-    gap: 12px !important;
+    gap: 14px !important;
     margin: 0 !important;
 }
 
@@ -904,16 +918,194 @@ body::before {
     gap: 8px !important;
 }
 
+.operation-group .button-group > button,
+.operation-group .dropdown-toggle,
+.filter-dropdown select,
+.search-input input,
+.delete-cloud-option {
+    line-height: 1 !important;
+}
+
+.operation-group .button-group > button,
+.operation-group .dropdown-toggle {
+    height: 42px !important;
+    min-height: 42px !important;
+    align-items: center !important;
+    padding-top: 0 !important;
+    padding-bottom: 1px !important;
+}
+
 .search-bar {
+    display: grid !important;
+    grid-template-columns: 180px minmax(280px, 1fr);
+    align-items: center !important;
+    gap: 10px !important;
     flex: unset !important;
     min-width: 0 !important;
-    justify-content: end !important;
+    justify-content: stretch !important;
 }
 
 .search-input,
 .filter-dropdown,
 .filter-dropdown select {
-    min-height: 38px !important;
+    min-height: 42px !important;
+}
+
+.filter-dropdown {
+    display: block !important;
+    min-width: 0 !important;
+}
+
+.filter-dropdown select {
+    width: 100% !important;
+    height: 42px !important;
+    border-radius: 14px !important;
+    padding: 1px 38px 0 16px !important;
+    border-color: var(--tahoe-line) !important;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0.38)),
+        rgba(255, 255, 255, 0.42) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45) !important;
+    font-weight: 600;
+}
+
+[data-theme="dark"] .filter-dropdown select,
+[data-theme="dark"] .search-input,
+[data-theme="dark"] .delete-cloud-option {
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04)),
+        rgba(255, 255, 255, 0.06) !important;
+}
+
+[data-theme="dark"] .delete-cloud-option input[type="checkbox"] {
+    border-color: rgba(235, 245, 255, 0.22) !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.search-input {
+    position: relative !important;
+    display: block !important;
+    min-width: 0 !important;
+    height: 42px !important;
+    min-height: 42px !important;
+    border: 1px solid var(--tahoe-line) !important;
+    border-radius: 16px !important;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.34)),
+        rgba(255, 255, 255, 0.42) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
+    overflow: hidden;
+}
+
+.search-input input {
+    position: absolute !important;
+    left: 16px !important;
+    right: 52px !important;
+    top: 50% !important;
+    width: auto !important;
+    height: 24px !important;
+    min-height: 24px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    font-size: 15px;
+    line-height: 24px !important;
+    transform: translateY(-56%) !important;
+}
+
+.search-input input:focus {
+    box-shadow: none !important;
+}
+
+.search-input .btn-icon {
+    position: absolute !important;
+    right: 5px !important;
+    top: 50% !important;
+    width: 36px !important;
+    min-width: 36px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 11px !important;
+    background:
+        linear-gradient(180deg, rgba(0, 122, 255, 0.96), rgba(0, 102, 216, 0.98)) !important;
+    box-shadow: none !important;
+    transform: translateY(-50%) !important;
+}
+
+.search-input .btn-icon img {
+    width: 18px !important;
+    height: 18px !important;
+    filter: brightness(0) invert(1) !important;
+    opacity: 0.96;
+}
+
+.delete-cloud-options {
+    display: flex !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+    margin: 12px 0 0 !important;
+    min-width: 0 !important;
+}
+
+.delete-cloud-option {
+    height: 34px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    margin: 0 !important;
+    padding: 0 12px 0 8px !important;
+    border: 1px solid var(--tahoe-line) !important;
+    border-radius: 999px !important;
+    color: var(--tahoe-muted) !important;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.66), rgba(255, 255, 255, 0.28)),
+        rgba(255, 255, 255, 0.32) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42) !important;
+    font-size: 13px !important;
+    font-weight: 650 !important;
+    line-height: 1 !important;
+}
+
+.delete-cloud-option span {
+    display: inline-flex !important;
+    align-items: center !important;
+    height: 100% !important;
+    line-height: 1 !important;
+}
+
+.delete-cloud-option input[type="checkbox"] {
+    width: 18px !important;
+    height: 18px !important;
+    min-height: 18px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 50% !important;
+    border: 1px solid rgba(60, 60, 67, 0.22) !important;
+    background: rgba(255, 255, 255, 0.72) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.delete-cloud-option input[type="checkbox"]:checked {
+    border-color: var(--tahoe-blue) !important;
+    background: var(--tahoe-blue) !important;
+}
+
+.delete-cloud-option input[type="checkbox"]:checked::after {
+    content: "";
+    position: absolute;
+    width: 5px;
+    height: 9px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+    margin: -2px 0 0 5px;
 }
 
 button,
@@ -1154,16 +1346,38 @@ html body .container #taskTable td:first-child button {
     body {
         display: block !important;
         padding: 12px !important;
+        overflow-x: hidden !important;
     }
 
     .header {
         margin-bottom: 12px !important;
+        grid-template-columns: 44px minmax(0, 1fr) 42px !important;
+        padding: 12px !important;
+        gap: 10px !important;
+    }
+
+    .brand-mark {
+        width: 44px !important;
+        height: 44px !important;
+    }
+
+    .header-meta {
+        display: none !important;
+    }
+
+    .header h1 {
+        font-size: 18px !important;
+    }
+
+    .header-title p {
+        font-size: 12px !important;
     }
 
     .theme-switch {
+        position: absolute !important;
         top: 18px !important;
+        right: 24px !important;
         bottom: auto !important;
-        right: 18px !important;
         left: auto !important;
     }
 
@@ -1181,19 +1395,24 @@ html body .container #taskTable td:first-child button {
     }
 
     .tabs {
-        position: sticky !important;
-        top: 10px !important;
+        position: relative !important;
+        top: auto !important;
         z-index: 40 !important;
-        flex-direction: row !important;
-        overflow-x: auto !important;
+        display: grid !important;
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        gap: 6px !important;
+        overflow: hidden !important;
         margin-bottom: 12px !important;
         margin-top: 0 !important;
+        padding: 8px !important;
     }
 
     .tab {
-        min-width: 92px !important;
+        min-width: 0 !important;
+        width: 100% !important;
         justify-content: center !important;
-        padding: 0 10px !important;
+        padding: 0 4px !important;
+        font-size: 13px !important;
     }
 
     .tab::before {
@@ -1202,6 +1421,43 @@ html body .container #taskTable td:first-child button {
 
     .operation-group {
         grid-template-columns: 1fr !important;
+        gap: 10px !important;
+    }
+
+    .button-group {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 8px !important;
+        width: 100% !important;
+    }
+
+    .search-bar {
+        grid-template-columns: 1fr !important;
+        gap: 8px !important;
+        width: 100% !important;
+    }
+
+    .filter-dropdown,
+    .search-input {
+        width: 100% !important;
+    }
+
+    .delete-cloud-options {
+        position: relative !important;
+        z-index: 1 !important;
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 8px !important;
+        margin-top: 10px !important;
+        width: 100% !important;
+    }
+
+    .delete-cloud-option {
+        justify-content: center !important;
+        height: 32px !important;
+        min-width: 0 !important;
+        padding: 0 8px !important;
+        white-space: nowrap !important;
     }
 
     .table-container {
@@ -1210,5 +1466,163 @@ html body .container #taskTable td:first-child button {
 
     html body .container #taskTable td:first-child {
         display: flex !important;
+    }
+}
+
+/* Final toolbar alignment pass */
+html body #taskTab .form-header .operation-group .button-group > button,
+html body #taskTab .form-header .operation-group .dropdown-toggle,
+html body #taskTab .form-header .filter-dropdown select,
+html body #taskTab .form-header .search-input input,
+html body #taskTab .form-header .delete-cloud-option {
+    display: inline-flex !important;
+    align-items: center !important;
+    height: 42px !important;
+    min-height: 42px !important;
+    line-height: 1 !important;
+    padding-top: 0 !important;
+    padding-bottom: 2px !important;
+    vertical-align: middle !important;
+}
+
+html body #taskTab .form-header .filter-dropdown select {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+}
+
+html body #taskTab .form-header .search-input input {
+    display: block !important;
+    position: absolute !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    line-height: 24px !important;
+    top: 50% !important;
+    transform: translateY(-56%) !important;
+}
+
+html body #taskTab .form-header .search-input input::placeholder {
+    line-height: 24px !important;
+}
+
+html body #taskTab .form-header .search-input .btn-icon {
+    position: absolute !important;
+    top: 50% !important;
+    right: 5px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding-bottom: 0 !important;
+    transform: translateY(-50%) !important;
+}
+
+html body #taskTab .form-header .search-input .btn-icon img {
+    display: block !important;
+    transform: translateY(-1px) !important;
+}
+
+html body #taskTab .form-header .delete-cloud-option {
+    height: 34px !important;
+    min-height: 34px !important;
+    padding-bottom: 1px !important;
+}
+
+html body #taskTab .form-header .delete-cloud-option input[type="checkbox"] {
+    position: relative !important;
+    display: inline-block !important;
+    flex: 0 0 18px !important;
+    transform: none !important;
+}
+
+html body #taskTab .form-header .delete-cloud-option input[type="checkbox"]::after {
+    left: 5px !important;
+    top: 2px !important;
+    margin: 0 !important;
+}
+
+@media (max-width: 860px) {
+    html body #taskTab .form-header {
+        padding: 12px !important;
+    }
+
+    html body #taskTab .form-header .task-operations {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        grid-template-areas:
+            "actions"
+            "filter"
+            "search"
+            "batch" !important;
+        gap: 10px !important;
+        align-items: stretch !important;
+    }
+
+    html body #taskTab .form-header .operation-group {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        grid-template-areas:
+            "actions"
+            "filter"
+            "search" !important;
+        gap: 10px !important;
+        align-items: stretch !important;
+    }
+
+    html body #taskTab .form-header .button-group {
+        grid-area: actions !important;
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 8px !important;
+        position: relative !important;
+        z-index: 3 !important;
+    }
+
+    html body #taskTab .form-header .search-bar {
+        display: contents !important;
+    }
+
+    html body #taskTab .form-header .filter-dropdown {
+        grid-area: filter !important;
+        display: block !important;
+        width: 100% !important;
+        position: relative !important;
+        z-index: 2 !important;
+    }
+
+    html body #taskTab .form-header .search-input {
+        grid-area: search !important;
+        display: block !important;
+        width: 100% !important;
+        position: relative !important;
+        z-index: 2 !important;
+    }
+
+    html body #taskTab .form-header .filter-dropdown select,
+    html body #taskTab .form-header .search-input {
+        height: 42px !important;
+        min-height: 42px !important;
+    }
+
+    html body #taskTab .form-header .search-input {
+        margin: 0 !important;
+        overflow: hidden !important;
+    }
+
+    html body #taskTab .form-header .delete-cloud-options {
+        grid-area: batch !important;
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 8px !important;
+        width: 100% !important;
+        margin: 0 !important;
+        clear: both !important;
+        position: relative !important;
+        z-index: 1 !important;
+    }
+
+    html body #taskTab .form-header .delete-cloud-option {
+        height: 32px !important;
+        min-height: 32px !important;
+        justify-content: center !important;
+        padding: 0 8px !important;
     }
 }
