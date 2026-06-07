@@ -28,6 +28,42 @@ th {
 .status-completed { background-color: #f6ffed; color: #52c41a; }
 .status-failed { background-color: #fff1f0; color: #f5222d; }
 
+.task-account-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+}
+
+.task-account-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cloud-type-tag {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    min-height: 22px;
+    padding: 0 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1;
+    font-weight: 500;
+}
+
+.cloud-tag-cloud189 {
+    color: #1890ff;
+    background-color: #e6f7ff;
+}
+
+.cloud-tag-quark {
+    color: #13a8a8;
+    background-color: #e6fffb;
+}
+
 /* 文本省略样式 */
 .ellipsis {
     max-width: 150px;

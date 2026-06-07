@@ -3,12 +3,11 @@ const { AppDataSource } = require('../database');
 const { Task, Account, CommonFolder } = require('../entities');
 const { TaskService } = require('./task');
 const { EmbyService } = require('./emby');
-const { Cloud189Service } = require('./cloud189');
+const CloudUtils = require('../utils/CloudUtils');
 const { TMDBService } = require('./tmdb');
 const path = require('path');
 const { default: cloudSaverSDK } = require('../sdk/cloudsaver/sdk');
 const ProxyUtil = require('../utils/ProxyUtil');
-const cloud189Utils = require('../utils/Cloud189Utils');
 
 class TelegramBotService {
     constructor(token, chatId) {
@@ -124,7 +123,7 @@ class TelegramBotService {
     initCommands() {
         this.bot.onText(/\/help/, async (msg) => {
             const helpText = 
-                '🤖 天翼云盘机器人使用指南\n\n' +
+                '🤖 云盘自动转存机器人使用指南\n\n' +
                 '📋 基础命令：\n' +
                 '/help - 显示帮助信息\n' +
                 '/accounts - 账号列表与切换\n' +
@@ -134,7 +133,7 @@ class TelegramBotService {
                 '/search_cs - 搜索CloudSaver资源\n' +
                 '/cancel - 取消当前操作\n\n' +
                 '📥 创建任务：\n' +
-                '直接发送天翼云盘分享链接即可创建任务\n' +
+                '直接发送天翼云盘或夸克网盘分享链接即可创建任务\n' +
                 '格式：链接（支持访问码的链接）\n\n' +
                 '📝 任务操作：\n' +
                 '/execute_[ID] - 执行指定任务\n' +
@@ -172,7 +171,7 @@ class TelegramBotService {
                         return;
                     }
                     try {
-                        const { url: shareLink, accessCode } = cloud189Utils.parseCloudShare(cacheShareLink);
+                        const { url: shareLink, accessCode } = CloudUtils.parseCloudShare(cacheShareLink);
                         // 处理分享链接
                         await this.handleFolderSelection(chatId, shareLink, null, accessCode);
                         return
@@ -185,7 +184,7 @@ class TelegramBotService {
             }
         });
 
-        this.bot.onText(/cloud\.189\.cn/, async (msg) => {
+        this.bot.onText(/cloud\.189\.cn|quark\.cn/, async (msg) => {
             const chatId = msg.chat.id;
             if (!this._checkChatId(chatId)){
                 return;
@@ -196,7 +195,7 @@ class TelegramBotService {
             }
             try {
                 if (!this._checkUserId(chatId)) return;
-                const { url: shareLink, accessCode } = cloud189Utils.parseCloudShare(msg.text);
+                const { url: shareLink, accessCode } = CloudUtils.parseCloudShare(msg.text);
                 await this.handleFolderSelection(chatId, shareLink, null, accessCode);
             } catch (error) {
                 console.log(error)
@@ -880,7 +879,10 @@ class TelegramBotService {
                     this.parentFolderIds.add(folder.pId);
                 }
             }
-            const cloud189 = Cloud189Service.getInstance(this.currentAccount);
+            const cloud189 = CloudUtils.getService(this.currentAccount);
+            if (CloudUtils.isQuarkAccount(this.currentAccount) && folderId === '-11') {
+                folderId = '0';
+            }
             const folders = await cloud189.getFolderNodes(folderId);
             if (!folders) {
                 await this.bot.sendMessage(chatId, '获取文件夹列表失败');

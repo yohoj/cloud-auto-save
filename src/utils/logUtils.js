@@ -2,7 +2,7 @@ const fs = require('fs').promises;
 
 // 存储所有的 SSE 客户端
 const clients = new Set();
-const LOG_FILE = '/tmp/cloud189-app.log';
+const LOG_FILE = '/tmp/cloud-auto-save.log';
 const MAX_LOG_SIZE = 1024 * 100; // 100kb
 // 初始化 SSE
 const initSSE = (app) => {

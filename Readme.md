@@ -41,12 +41,12 @@
 # docker安装
 ```
   docker run -d \
-  -v /vol2/1000/docker/cloud189:/home/data \
-  -v /vol1/1000/link/tianyi:/home/strm \
+  -v /vol2/1000/docker/cloud-auto-save:/home/data \
+  -v /vol1/1000/link/cloud:/home/strm \
   -p 6001:3000 \
   --restart unless-stopped \
-  --name cloud189-auto-save \
+  --name cloud-auto-save \
   -e PUID=0 \
   -e PGID=0 \
-  yahoj/cloud189-auto-save
+  yahoj/cloud-auto-save
 ```

@@ -4,6 +4,8 @@ class BatchTaskDto {
         this.taskInfos = data.taskInfos;
         this.targetFolderId = data?.targetFolderId || null;
         this.shareId = data?.shareId || null;
+        this.shareMode = data?.shareMode || null;
+        this.shareFolderId = data?.shareFolderId || null;
         this.familyId = data?.familyId || null;
     }
 

@@ -20,7 +20,7 @@ class WxPusherService extends MessageService {
             const url = "https://wxpusher.zjiecode.com/api/send/message/simple-push";
             const msg = await this.convertToMarkdown(message)
             const data = {
-                // summary: "天翼云盘更新",
+                // summary: "云盘更新",
                 content: msg,
                 content_type: 3,
                 spt: this.config.spt

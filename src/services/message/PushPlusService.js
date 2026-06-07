@@ -21,7 +21,7 @@ class PushPlusService extends MessageService {
             await got.post('http://www.pushplus.plus/send', {
                 json: {
                     token: this.config.token,
-                    // title: '天翼云盘更新',
+                    // title: '云盘更新',
                     content: msg,
                     template: 'markdown',
                     topic: this.config.topic || '',        // 群组编码，不填仅发送给自己

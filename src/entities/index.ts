@@ -14,6 +14,9 @@ export class Account {
     @Column('text', { nullable: true})
     cookies!: string;
 
+    @Column('text', { nullable: true, default: 'cloud189' })
+    cloudType!: string;
+
     @Column('boolean', { default: true })
     isActive!: boolean;
 

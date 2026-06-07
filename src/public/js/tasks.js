@@ -46,6 +46,13 @@ var taskList = []
 function getTaskById(id) {
     return taskList.find(task => task.id == id);
 }
+
+function getCloudTypeMeta(cloudType) {
+    return cloudType === 'quark'
+        ? { label: '夸克', className: 'cloud-tag-quark' }
+        : { label: '天翼', className: 'cloud-tag-cloud189' };
+}
+
 async function fetchTasks() {
     taskList = []
     loading.show()
@@ -62,6 +69,7 @@ async function fetchTasks() {
             const safeTaskName = escapeHtml(taskName);
             const safeShareLink = escapeHtml(task.shareLink);
             const safeAccountName = escapeHtml(task.account?.username || '');
+            const cloudTypeMeta = getCloudTypeMeta(task.account?.cloudType);
             const safeRealFolderName = escapeHtml(task.realFolderName || task.realFolderId);
             const safeRemark = escapeHtml(task.remark || '');
             const safeStatus = escapeHtml(task.status);
@@ -74,7 +82,12 @@ async function fetchTasks() {
                         <button onclick="showEditTaskModal(${task.id})">修改</button>
                     </td>
                     <td data-label="资源名称">${cronIcon}<a href="${safeShareLink}" target="_blank" class='ellipsis' title="${safeTaskName}">${safeTaskName}</a></td>
-                    <td data-label="账号">${safeAccountName}</td>
+                    <td data-label="账号">
+                        <div class="task-account-cell">
+                            <span class="cloud-type-tag ${cloudTypeMeta.className}">${cloudTypeMeta.label}</span>
+                            <span class="task-account-name">${safeAccountName}</span>
+                        </div>
+                    </td>
                     <!--<td data-label="首次保存目录"><a href="https://cloud.189.cn/web/main/file/folder/${task.targetFolderId}" target="_blank">${task.targetFolderId}</a></td>-->
                      <td data-label="更新目录"><a href="javascript:void(0)" onclick="showFileListModal('${task.id}')" class='ellipsis'>${safeRealFolderName}</a></td>
                     <td data-label="更新数/总数">${task.currentEpisodes || 0}/${task.totalEpisodes || '未知'}${progressRing}</td>
@@ -1004,7 +1017,9 @@ function parseCloudShare(shareText) {
         /(https?:\/\/[^/]+\/web\/share\?[^\s]+)/,              // 其他域名的web/share格式
         /(https?:\/\/[^/]+\/t\/[a-zA-Z0-9]+)/,                 // 其他域名的t/xxx格式
         /(https?:\/\/[^/]+\/share\.html[^\s]*)/,               // share.html格式
-        /(https?:\/\/content\.21cn\.com[^\s]+)/                // 订阅链接格式
+        /(https?:\/\/content\.21cn\.com[^\s]+)/,               // 订阅链接格式
+        /(https?:\/\/(?:pan|drive)\.quark\.cn\/s\/[a-zA-Z0-9_-]+)/, // 夸克网盘
+        /(https?:\/\/[^/]*quark\.cn\/s\/[a-zA-Z0-9_-]+)/       // 其他夸克域名
     ];
 
     for (const pattern of urlPatterns) {

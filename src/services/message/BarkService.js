@@ -20,7 +20,7 @@ class BarkService extends MessageService {
             const url = `${this.config.serverUrl}/${this.config.key}`;
             const msg = await this.convertToMarkdown(message)
             const data = {
-                title: "天翼云盘更新",
+                title: "云盘更新",
                 body: msg
             };
             const resp = await got.post(url, {

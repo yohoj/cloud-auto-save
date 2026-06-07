@@ -1,5 +1,5 @@
 const { LessThan, In, IsNull } = require('typeorm');
-const { Cloud189Service } = require('./cloud189');
+const CloudUtils = require('../utils/CloudUtils');
 const { MessageUtil } = require('./message');
 const { logTaskEvent } = require('../utils/logUtils');
 const ConfigService = require('./ConfigService');
@@ -14,7 +14,6 @@ const { EventService } = require('./eventService');
 const { TaskEventHandler } = require('./taskEventHandler');
 const AIService = require('./ai');
 const harmonizedFilter = require('../utils/BloomFilter');
-const cloud189Utils = require('../utils/Cloud189Utils');
 const alistService = require('./alistService');
 
 class TaskService {
@@ -35,8 +34,8 @@ class TaskService {
     }
 
     // 解析分享链接
-    async getShareInfo(cloud189, shareCode) {
-         const shareInfo = await cloud189.getShareInfo(shareCode);
+    async getShareInfo(cloud189, shareCode, accessCode = '') {
+         const shareInfo = await cloud189.getShareInfo(shareCode, accessCode);
          if (!shareInfo) throw new Error('获取分享信息失败');
          if(shareInfo.res_code == "ShareAuditWaiting") {
             throw new Error('分享链接审核中, 请稍后再试');
@@ -208,14 +207,14 @@ class TaskService {
         if (!account) throw new Error('账号不存在');
         
         // 解析url
-        const {url: parseShareLink, accessCode} = cloud189Utils.parseCloudShare(taskDto.shareLink)
+        const {url: parseShareLink, accessCode} = CloudUtils.parseCloudShare(taskDto.shareLink)
         if (accessCode) {
             taskDto.accessCode = accessCode;
         }
         taskDto.shareLink = parseShareLink;
-        const cloud189 = Cloud189Service.getInstance(account);
-        const shareCode = cloud189Utils.parseShareCode(taskDto.shareLink);
-        const shareInfo = await this.getShareInfo(cloud189, shareCode);
+        const cloud189 = CloudUtils.getService(account);
+        const shareCode = CloudUtils.parseShareCode(taskDto.shareLink, account);
+        const shareInfo = await this.getShareInfo(cloud189, shareCode, taskDto.accessCode);
         // 如果分享链接是加密链接, 且没有提供访问码, 则抛出错误
         if (shareInfo.shareMode == 1 ) {
             if (!taskDto.accessCode) {
@@ -282,8 +281,8 @@ class TaskService {
         if (!task.enableSystemProxy && deleteCloud) {
             const account = await this.accountRepo.findOneBy({ id: task.accountId });
             if (!account) throw new Error('账号不存在');
-            const cloud189 = Cloud189Service.getInstance(account);
-            await this.deleteCloudFile(cloud189,await this.getRootFolder(task), 1);
+            const cloud189 = CloudUtils.getService(account);
+            await this.deleteCloudFile(cloud189, await this.getRootFolder(task), 1);
             // 删除strm
             new StrmService().deleteDir(path.join(task.account.localStrmPrefix, folderName))
             // 刷新Alist缓存
@@ -393,6 +392,8 @@ class TaskService {
                     fileName: file.name,
                     isFolder: 0,
                     md5: file.md5,
+                    shareFidToken: file.shareFidToken,
+                    fidToken: file.fidToken,
                 });
             }
             fileNameList.push(`├─ ${file.name}`);
@@ -409,7 +410,9 @@ class TaskService {
                     taskInfos: JSON.stringify(taskInfoList),
                     type: 'SHARE_SAVE',
                     targetFolderId: task.realFolderId,
-                    shareId: task.shareId
+                    shareId: task.shareId,
+                    shareMode: task.shareMode,
+                    shareFolderId: task.shareFolderId
                 });
                 await this.createBatchTask(cloud189, batchTaskDto);
             }else{
@@ -491,7 +494,7 @@ class TaskService {
                 throw new Error('账号不存在');
             }
             task.account = account;
-            const cloud189 = Cloud189Service.getInstance(account);
+            const cloud189 = CloudUtils.getService(account);
              // 获取分享文件列表并进行增量转存
              const shareDir = await cloud189.listShareDir(task.shareId, task.shareFolderId, task.shareMode,task.accessCode, task.isFolder);
              if(shareDir.res_code == "ShareAuditWaiting") {
@@ -614,6 +617,7 @@ class TaskService {
             select: {
                 account: {
                     username: true,
+                    cloudType: true,
                     localStrmPrefix: true,
                     cloudStrmPrefix: true,
                     embyPathReplace: true
@@ -637,6 +641,7 @@ class TaskService {
             select: {
                 account: {
                     username: true,
+                    cloudType: true,
                     localStrmPrefix: true,
                     cloudStrmPrefix: true,
                     embyPathReplace: true
@@ -867,7 +872,7 @@ class TaskService {
         if (task.taskStatus == 3 || task.taskStatus == 1) {
             // 暂停200毫秒
             await new Promise(resolve => setTimeout(resolve, 200));
-            return await this.checkTaskStatus(cloud189,taskId, count++, batchTaskDto)
+            return await this.checkTaskStatus(cloud189, taskId, count + 1, batchTaskDto)
         }
         if (task.taskStatus == 4) {
             // 如果failedCount > 0 说明有失败或者被和谐的文件, 需要查一次文件列表
@@ -905,7 +910,7 @@ class TaskService {
             }
             await cloud189.manageBatchTask(taskId, conflictTaskInfo.targetFolderId, taskInfos);
             await new Promise(resolve => setTimeout(resolve, 200));
-            return await this.checkTaskStatus(cloud189, taskId, count++, batchTaskDto)
+            return await this.checkTaskStatus(cloud189, taskId, count + 1, batchTaskDto)
         }
         return false;
     }
@@ -1019,6 +1024,7 @@ class TaskService {
             select: {
                 account: {
                     username: true,
+                    cloudType: true,
                     localStrmPrefix: true,
                     cloudStrmPrefix: true,
                     embyPathReplace: true
@@ -1086,7 +1092,7 @@ class TaskService {
             for (const account of accounts) {
                 let username = account.username.replace(/(.{3}).*(.{4})/, '$1****$2');
                 try {
-                    const cloud189 = Cloud189Service.getInstance(account); 
+                    const cloud189 = CloudUtils.getService(account); 
                     await this._clearRecycleBin(cloud189, username, enableAutoClearRecycle, enableAutoClearFamilyRecycle)
                 } catch (error) {
                     logTaskEvent(`定时[${username}]清空回收站任务执行失败:${error.message}`);
@@ -1192,6 +1198,7 @@ class TaskService {
             select: {
                 account: {
                     username: true,
+                    cloudType: true,
                     localStrmPrefix: true,
                     cloudStrmPrefix: true,
                     embyPathReplace: true
@@ -1219,7 +1226,7 @@ class TaskService {
             logTaskEvent(`任务[${task.resourceName}]账号不存在, 跳过`)
             return
         }
-        const cloud189 = Cloud189Service.getInstance(account);
+        const cloud189 = CloudUtils.getService(account);
         // 获取文件列表
         const fileList = await this.getAllFolderFiles(cloud189, task)
         if (fileList.length == 0) {
@@ -1244,9 +1251,9 @@ class TaskService {
         if (!account) {
             throw new Error('账号不存在')
         }
-        const cloud189 = Cloud189Service.getInstance(account);
-        const shareCode = cloud189Utils.parseShareCode(shareLink)
-        const shareInfo = await this.getShareInfo(cloud189, shareCode)
+        const cloud189 = CloudUtils.getService(account);
+        const shareCode = CloudUtils.parseShareCode(shareLink, account)
+        const shareInfo = await this.getShareInfo(cloud189, shareCode, accessCode)
         if (shareInfo.shareMode == 1) {
             if (!accessCode) {
                 throw new Error('分享链接为私密链接, 请输入提取码')
@@ -1311,6 +1318,7 @@ class TaskService {
             select: {
                 account: {
                     username: true,
+                    cloudType: true,
                     localStrmPrefix: true,
                     cloudStrmPrefix: true,
                     embyPathReplace: true
@@ -1373,7 +1381,7 @@ class TaskService {
             // 代理文件
         }else{
             // 删除网盘文件
-            const cloud189 = Cloud189Service.getInstance(task.account);
+            const cloud189 = CloudUtils.getService(task.account);
             await this.deleteCloudFile(cloud189,files, 0);
             await this.refreshAlistCache(task)
         }
@@ -1417,7 +1425,7 @@ class TaskService {
         if (task.enableSystemProxy) {
             throw new Error('系统代理模式已移除');
         }
-        const cloud189 = Cloud189Service.getInstance(task.account);
+        const cloud189 = CloudUtils.getService(task.account);
         return await this.getAllFolderFiles(cloud189, task)
     }
 }

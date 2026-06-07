@@ -20,6 +20,8 @@ async function fetchAccounts(updateSelect = false) {
         accountsList = data.data
         data.data.forEach(account => {
             const safeUsername = escapeHtml(account.username);
+            const cloudType = account.cloudType || (account.original_username?.startsWith('q_') ? 'quark' : 'cloud189');
+            const cloudTypeName = cloudType === 'quark' ? '夸克网盘' : '天翼云盘';
             const safeAlias = escapeHtml(account.alias || '');
             const safeAliasArg = escapeJsString(account.alias || '');
             const safeCloudStrmPrefix = escapeHtml(account.cloudStrmPrefix || '');
@@ -37,6 +39,7 @@ async function fetchAccounts(updateSelect = false) {
                         <button class="btn-danger" onclick="deleteAccount(${account.id})">删除</button>
                         </td>
                     <td data-label='账户名'>${safeUsername}</td>
+                    <td data-label='网盘类型'>${cloudTypeName}</td>
                     <td data-label='别名' onclick="updateAlias(${account.id}, '${safeAliasArg}')">${safeAlias}</td>
                     <td data-label='个人容量'>${formatBytes(account.capacity.cloudCapacityInfo.usedSize) + '/' + formatBytes(account.capacity.cloudCapacityInfo.totalSize)}</td>
                     <td data-label='家庭容量'>${formatBytes(account.capacity.familyCapacityInfo.usedSize) + '/' + formatBytes(account.capacity.familyCapacityInfo.totalSize)}</td>
@@ -47,9 +50,9 @@ async function fetchAccounts(updateSelect = false) {
             `;
             if (updateSelect) {
                 // n_打头的账号不显示在下拉列表中
-                if (!account.username.startsWith('n_')) {
+                if (!account.original_username?.startsWith('n_')) {
                     select.innerHTML += `
-                    <option value="${account.id}" ${account.isDefault?"selected":''}>${safeUsername}</option>
+                    <option value="${account.id}" ${account.isDefault?"selected":''}>${cloudTypeName} - ${safeUsername}</option>
                 `;
                 }
             }
@@ -79,12 +82,15 @@ function initAccountForm() {
         e.preventDefault();
         await createAccount();
     });
+    document.getElementById('cloudType').addEventListener('change', updateAccountFormByCloudType);
 }
 
 function openAddAccountModal() {
     chooseAccount = null
     const modal = document.getElementById('addAccountModal');
     modal.style.display = 'block';
+    document.getElementById('cloudType').value = 'cloud189';
+    updateAccountFormByCloudType();
 }
 
 function closeAddAccountModal() {
@@ -97,6 +103,8 @@ function closeAddAccountModal() {
     document.getElementById('username').removeAttribute('readonly')
     // 清空表单
     document.getElementById('accountForm').reset();
+    document.getElementById('cloudType').value = 'cloud189';
+    updateAccountFormByCloudType();
     // 移除可能存在的验证码容器
     const captchaContainer = document.querySelector('.captcha-container');
     if (captchaContainer) {
@@ -122,6 +130,7 @@ async function editAccount(id) {
     modalTitle.textContent = '修改账号';
 
     // 填充表单数据
+    document.getElementById('cloudType').value = chooseAccount.cloudType || (chooseAccount.original_username?.startsWith('q_') ? 'quark' : 'cloud189');
     document.getElementById('username').value = chooseAccount.username;
     document.getElementById('password').value = '';
     document.getElementById('cookie').value = '';
@@ -131,6 +140,7 @@ async function editAccount(id) {
     document.getElementById('embyPathReplace').value = chooseAccount.embyPathReplace || '';
     // 账号不允许修改
     document.getElementById('username').setAttribute('readonly', true )
+    updateAccountFormByCloudType();
     // 修改提交按钮文本
     const submitBtn = modal.querySelector('button[type="submit"]');
     submitBtn.textContent = '修改';
@@ -138,6 +148,7 @@ async function editAccount(id) {
 
 async function createAccount() {
     let username = document.getElementById('username').value;
+    const cloudType = document.getElementById('cloudType').value;
     const password = document.getElementById('password').value;
     const cookies  = document.getElementById('cookie').value;
     const alias = document.getElementById('alias').value;
@@ -153,8 +164,12 @@ async function createAccount() {
         message.warning('用户名不能为空');
         return;
     }
-    if (!chooseAccount?.id && !password && !cookies) {
-        message.warning('密码和Cookie不能同时为空');
+    if (cloudType === 'quark' && !cookies) {
+        message.warning('夸克网盘账号必须填写Cookie');
+        return;
+    }
+    if (cloudType === 'cloud189' && !chooseAccount?.id && !password && !cookies) {
+        message.warning('天翼云盘账号密码和Cookie不能同时为空');
         return;
     }
     if (chooseAccount?.id) {
@@ -164,7 +179,7 @@ async function createAccount() {
     const response = await fetch('/api/accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: chooseAccount?.id, username, password, cookies, alias, validateCode, cloudStrmPrefix, localStrmPrefix, embyPathReplace })
+        body: JSON.stringify({ id: chooseAccount?.id, cloudType, username, password, cookies, alias, validateCode, cloudStrmPrefix, localStrmPrefix, embyPathReplace })
     });
     const data = await response.json();
     if (data.success) {
@@ -177,7 +192,7 @@ async function createAccount() {
             validateCodeDom.value = ''
         }
         closeAddAccountModal();
-        fetchAccounts();
+        fetchAccounts(true);
     } else {
         loading.hide()
         // 如果返回的code是NEED_CAPTCHA, 则展示二维码和输入框, 允许用户输入验证码后重新提交
@@ -189,6 +204,25 @@ async function createAccount() {
         }else{
             message.warning('账号添加失败: ' + data.error);
         }
+    }
+}
+
+function updateAccountFormByCloudType() {
+    const cloudType = document.getElementById('cloudType').value;
+    const passwordInput = document.getElementById('password');
+    const cookieInput = document.getElementById('cookie');
+    const helpText = document.getElementById('accountCredentialHelp');
+    const cloudStrmPrefix = document.getElementById('cloudStrmPrefix');
+    if (cloudType === 'quark') {
+        passwordInput.placeholder = '夸克网盘无需填写';
+        cookieInput.placeholder = '请输入夸克网盘Cookie';
+        helpText.textContent = '夸克网盘使用Cookie登录，请填写Cookie。';
+        cloudStrmPrefix.placeholder = 'http://alist:5244/d/夸克网盘';
+    } else {
+        passwordInput.placeholder = '';
+        cookieInput.placeholder = '';
+        helpText.textContent = '天翼云盘密码和Cookie至少填写一个，如果都填写，则只有账号密码生效。';
+        cloudStrmPrefix.placeholder = 'http://alist:5244/d/云盘';
     }
 }
 function formatBytes(bytes) {

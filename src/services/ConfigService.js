@@ -51,6 +51,7 @@ class ConfigService {
           tmdb: true,
           openai: true,
           cloud189: false,
+          quark: false,
           customPush: false
         }
       },

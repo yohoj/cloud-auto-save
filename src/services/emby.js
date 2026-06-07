@@ -4,7 +4,7 @@ const ConfigService = require('./ConfigService');
 const { MessageUtil } = require('./message');
 const { AppDataSource } = require('../database'); 
 const { Task, Account } = require('../entities'); 
-const { Cloud189Service } = require('./cloud189');
+const CloudUtils = require('../utils/CloudUtils');
 const path = require('path');
 const { StrmService } = require('./strm');
 
@@ -249,6 +249,7 @@ class EmbyService {
                         select: {
                             account: {
                                 username: true,
+                                cloudType: true,
                                 password: true,
                                 cookies: true,
                                 localStrmPrefix: true,
@@ -272,7 +273,7 @@ class EmbyService {
                 if (!isFolder) {
                     // 如果是剧集文件，只删除对应的单个文件
                     logTaskEvent(`删除单个剧集文件, 任务id: ${task.id}, 文件路径: ${itemPath}`);
-                    const cloud189 = Cloud189Service.getInstance(task.account);
+                    const cloud189 = CloudUtils.getService(task.account);
                     const folderInfo = await cloud189.listFiles(task.realFolderId);
                     if (!folderInfo || !folderInfo.fileListAO) {
                         logTaskEvent(`未找到对应的网盘文件列表: 跳过删除`);

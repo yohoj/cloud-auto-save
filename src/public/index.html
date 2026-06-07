@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>天翼云盘自动转存系统</title>
+    <title>云盘自动转存系统</title>
     <meta name="theme-color" content="#ffffff">
     <meta name="color-scheme" content="light dark">
 
@@ -30,13 +30,19 @@
     <link rel="stylesheet" href="/css/floating-btn.css">
     <link rel="stylesheet" href="/css/cloudsaver.css">
     <link rel="stylesheet" href="/css/chat.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <link rel="stylesheet" href="/css/media-app.css">
 </head>
 
 <body>
     <div class="header">
-        <h1 id="appTitle">天翼自动转存</h1>
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div class="header-title">
+            <h1 id="appTitle">云盘自动转存</h1>
+            <p>把云盘分享整理成顺手的影音片单</p>
+        </div>
         <div class="header-meta">
-            <a href="https://github.com/yohoj/cloud189-auto-save" target="_blank" title="GitHub">
+            <a href="https://github.com/yohoj/cloud-auto-save" target="_blank" title="GitHub">
                 <span class="github-icon"></span>
                 <span id="version"></span>
             </a>
@@ -89,6 +95,13 @@
                     <form id="accountForm">
                         <div class="form-body">
                             <div class="form-group">
+                                <label for="cloudType">网盘类型</label>
+                                <select id="cloudType" required>
+                                    <option value="cloud189">天翼云盘</option>
+                                    <option value="quark">夸克网盘</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
                                 <label for="username">用户名</label>
                                 <input type="text" id="username" required>
                             </div>
@@ -109,7 +122,7 @@
                                 <input type="cookie" id="cookie">
                             </div>
                             <div class="form-group">
-                                <small class="form-text">密码和Cookie至少填写一个, 如果都填写, 则只有账号密码生效</small>
+                                <small class="form-text" id="accountCredentialHelp">天翼云盘密码和Cookie至少填写一个，如果都填写，则只有账号密码生效。</small>
                             </div>
                             <div class="form-group">
                                 <label for="alias">别名(可选)</label>
@@ -117,21 +130,21 @@
                             </div>
                             <div class="form-group">
                                 <label for="alias">媒体目录(可选)</label>
-                                <input type="text" id="cloudStrmPrefix" placeholder="http://alist:5244/d/天翼云盘">
+                                <input type="text" id="cloudStrmPrefix" placeholder="http://alist:5244/d/云盘">
                                 <small class="form-text">STRM文件内容前缀, 详情查看<a
                                         href='https://github.com/1307super/cloud189-auto-save/wiki/3.STRM%E4%B8%8EEmby'
                                         target="_blank">wiki</a></small>
                             </div>
                             <div class="form-group">
                                 <label for="alias">本地目录(可选)</label>
-                                <input type="text" id="localStrmPrefix" placeholder="/天翼1">
+                                <input type="text" id="localStrmPrefix" placeholder="/云盘1">
                                 <small class="form-text">保存STRM文件的目录前缀, 详情查看<a
                                         href='https://github.com/1307super/cloud189-auto-save/wiki/3.STRM%E4%B8%8EEmby'
                                         target="_blank">wiki</a></small>
                             </div>
                             <div class="form-group">
                                 <label for="alias">Emby替换路径(可选)</label>
-                                <input type="text" id="embyPathReplace" placeholder="/影视剧:/cloud/天翼云盘">
+                                <input type="text" id="embyPathReplace" placeholder="/影视剧:/cloud/云盘">
                                 <small class="form-text">通知Emby扫库的替换逻辑, 详情查看<a
                                         href='https://github.com/1307super/cloud189-auto-save/wiki/3.STRM%E4%B8%8EEmby'
                                         target="_blank">wiki</a></small>
@@ -150,6 +163,7 @@
                     <thead>
                         <tr>
                             <th>用户名</th>
+                            <th>网盘类型</th>
                             <th>容量</th>
                             <th>操作</th>
                         </tr>
@@ -409,7 +423,7 @@
                                 <input type="checkbox" id="enableAutoCreateFolder">
                                 云盘文件夹不存在时自动创建
                             </label>
-                            <small class="form-text">当天翼云盘中任务更新目录不存在的时候, 自动创建文件夹, 仅会创建最后一级文件夹</small>
+                            <small class="form-text">当云盘中任务更新目录不存在的时候, 自动创建文件夹, 仅会创建最后一级文件夹</small>
                         </div>
                     </div>
                 </div>
@@ -611,10 +625,10 @@
                                     onclick="toggleHelpText(this)">显示帮助</button>
                                 <small class="form-text">例如:
                                     <br />如果播放地址是<span
-                                        style="background-color: #f0f0f0;">http://127.0.0.1:5244/d/天翼云盘/剧集/北上(2025)/Season
+                                        style="background-color: #f0f0f0;">http://127.0.0.1:5244/d/云盘/剧集/北上(2025)/Season
                                         01/S01E01.mkv</span>
                                     <br />那么你的前缀就应该写 <span
-                                        style="background-color: #f0f0f0;">http://127.0.0.1:5244/d/天翼云盘</span>
+                                        style="background-color: #f0f0f0;">http://127.0.0.1:5244/d/云盘</span>
                                     <br />完整逻辑为
                                     <br />生成strm路径:
                                     <br />账号本地目录 + 任务更新目录(排除根目录) + 文件名.strm

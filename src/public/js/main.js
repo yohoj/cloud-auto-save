@@ -16,6 +16,13 @@ function debounce(func, wait) {
     };
 }
 
+function keepTahoeSkinLast() {
+    const tahoeSkin = document.querySelector('link[href="/css/media-app.css"]');
+    if (tahoeSkin) {
+        document.head.appendChild(tahoeSkin);
+    }
+}
+
 // 主入口文件
 document.addEventListener('DOMContentLoaded', () => {
      // 初始化macos样式
@@ -27,6 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
             newCss.rel = 'stylesheet';
             newCss.href = '/css/macos.css';
             document.head.appendChild(newCss);
+            keepTahoeSkinLast();
         }
         appTitle.addEventListener('click', (e) => {
             e.preventDefault();
@@ -45,9 +53,11 @@ document.addEventListener('DOMContentLoaded', () => {
            newCss.rel = 'stylesheet';
            newCss.href = '/css/macos.css';
            document.head.appendChild(newCss);
+           keepTahoeSkinLast();
            }
         });
     }
+    keepTahoeSkinLast();
     // 加载版本号
     loadVersion();
     // 初始化所有功能

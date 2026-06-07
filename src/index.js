@@ -3,7 +3,7 @@ const express = require('express');
 const { AppDataSource } = require('./database');
 const { Account, Task, CommonFolder } = require('./entities');
 const { TaskService } = require('./services/task');
-const { Cloud189Service } = require('./services/cloud189');
+const CloudUtils = require('./utils/CloudUtils');
 const { MessageUtil } = require('./services/message');
 const { CacheManager } = require('./services/CacheManager')
 const ConfigService = require('./services/ConfigService');
@@ -13,7 +13,8 @@ const FileStore = require('session-file-store')(session);
 const { SchedulerService } = require('./services/scheduler');
 const { logTaskEvent, initSSE, sendAIMessage } = require('./utils/logUtils');
 const TelegramBotManager = require('./utils/TelegramBotManager');
-const fs = require('fs').promises;
+const fsSync = require('fs');
+const fs = fsSync.promises;
 const path = require('path');
 const { setupCloudSaverRoutes, clearCloudSaverToken } = require('./sdk/cloudsaver');
 const { Like, Not, IsNull, In, Or } = require('typeorm');
@@ -37,6 +38,16 @@ app.use(cors({
 app.use(express.json());
 
 const asyncHandler = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+const publicDirs = [
+    path.join(__dirname, 'public'),
+    path.join(__dirname, '../src/public')
+];
+const getPublicFile = (fileName) => {
+    const filePath = publicDirs
+        .map(publicDir => path.join(publicDir, fileName))
+        .find(candidate => fsSync.existsSync(candidate));
+    return filePath || path.join(publicDirs[0], fileName);
+};
 
 app.use(session({
     store: new FileStore({
@@ -80,14 +91,14 @@ app.get('/', (req, res) => {
     if (!req.session.authenticated) {
         res.redirect('/login');
     } else {
-        res.sendFile(__dirname + '/public/index.html');
+        res.sendFile(getPublicFile('index.html'));
     }
 });
 
 
 // 登录页面
 app.get('/login', (req, res) => {
-    res.sendFile(__dirname + '/public/login.html');
+    res.sendFile(getPublicFile('login.html'));
 });
 
 // 登录接口
@@ -102,7 +113,9 @@ app.post('/api/auth/login', (req, res) => {
         res.json({ success: false, error: '用户名或密码错误' });
     }
 });
-app.use(express.static(path.join(__dirname,'public')));
+publicDirs
+    .filter(publicDir => fsSync.existsSync(publicDir))
+    .forEach(publicDir => app.use(express.static(publicDir)));
 // 为所有路由添加认证（除了登录页和登录接口）
 app.use((req, res, next) => {
     if (req.path === '/' || req.path === '/login' 
@@ -134,6 +147,17 @@ AppDataSource.initialize().then(async () => {
         console.error('STRM目录权限初始化失败:', error);
     }
 
+    try {
+        const accountColumns = await AppDataSource.query("PRAGMA table_info('account')");
+        if (!accountColumns.some(column => column.name === 'cloudType')) {
+            await AppDataSource.query("ALTER TABLE account ADD COLUMN cloudType text DEFAULT 'cloud189'");
+            await AppDataSource.query("UPDATE account SET cloudType = 'quark' WHERE username LIKE 'q\\_%' ESCAPE '\\'");
+            console.log('账号网盘类型字段初始化完成');
+        }
+    } catch (error) {
+        console.error('账号网盘类型字段初始化失败:', error);
+    }
+
     const accountRepo = AppDataSource.getRepository(Account);
     const taskRepo = AppDataSource.getRepository(Task);
     const commonFolderRepo = AppDataSource.getRepository(CommonFolder);
@@ -158,14 +182,15 @@ AppDataSource.initialize().then(async () => {
         const accounts = await accountRepo.find();
         // 获取容量
         for (const account of accounts) {
+            account.cloudType = account.cloudType || (account.username.startsWith('q_') ? 'quark' : 'cloud189');
             
             account.capacity = {
                 cloudCapacityInfo: {usedSize:0,totalSize:0},
                 familyCapacityInfo: {usedSize:0,totalSize:0}
             }
-            // 如果账号名是s打头 则不获取容量
+            // n_ 开头的账号用于占位/通知，不参与网盘容量查询
             if (!account.username.startsWith('n_')) {
-                const cloud189 = Cloud189Service.getInstance(account);
+                const cloud189 = CloudUtils.getService(account);
                 const capacity = await cloud189.getUserSizeInfo()
                 if (capacity && capacity.res_code == 0) {
                     account.capacity.cloudCapacityInfo = capacity.cloudCapacityInfo;
@@ -195,10 +220,24 @@ AppDataSource.initialize().then(async () => {
                     account.cookies = existingAccount.cookies;
                 }
             }
-            // 尝试登录, 登录成功写入store, 如果需要验证码, 则返回用户验证码图片
-            if (!account.username.startsWith('n_') && req.body.password) {
+            account.cloudType = account.cloudType || (account.username.startsWith('q_') ? 'quark' : 'cloud189');
+            if (!['cloud189', 'quark'].includes(account.cloudType)) {
+                throw new Error('无效的网盘类型');
+            }
+            if (CloudUtils.isQuarkAccount(account)) {
+                if (!account.cookies) {
+                    throw new Error('夸克网盘账号请填写 Cookie');
+                }
+                const quark = CloudUtils.getService(account);
+                const folders = await quark.getFolderNodes('0');
+                if (!folders) {
+                    throw new Error('夸克 Cookie 验证失败');
+                }
+            }
+            // 天翼账号尝试登录, 登录成功写入store, 如果需要验证码, 则返回用户验证码图片
+            if (CloudUtils.isCloud189Account(account) && !account.username.startsWith('n_') && req.body.password) {
                 // 尝试登录
-                const cloud189 = Cloud189Service.getInstance(account);
+                const cloud189 = CloudUtils.getService(account);
                 const loginResult = await cloud189.login(account.username, account.password, req.body.validateCode);
                 if (!loginResult.success) {
                     if (loginResult.code == "NEED_CAPTCHA") {
@@ -216,7 +255,7 @@ AppDataSource.initialize().then(async () => {
                 }
             }
             await accountRepo.save(account);
-            Cloud189Service.removeInstance(account.username);
+            CloudUtils.removeInstance(account.username);
             res.json({ success: true, data: null });
         } catch (error) {
             res.json({ success: false, error: error.message });
@@ -325,7 +364,8 @@ AppDataSource.initialize().then(async () => {
             },
             select: {
                 account: {
-                    username: true
+                    username: true,
+                    cloudType: true
                 }
             },
             where: whereClause
@@ -403,6 +443,7 @@ AppDataSource.initialize().then(async () => {
                 select: {
                     account: {
                         username: true,
+                        cloudType: true,
                         localStrmPrefix: true,
                         cloudStrmPrefix: true,
                         embyPathReplace: true
@@ -440,7 +481,7 @@ AppDataSource.initialize().then(async () => {
      app.get('/api/folders/:accountId', async (req, res) => {
         try {
             const accountId = parseInt(req.params.accountId);
-            const folderId = req.query.folderId || '-11';
+            let folderId = req.query.folderId || '-11';
             const forceRefresh = req.query.refresh === 'true';
             const cacheKey = `folders_${accountId}_${folderId}`;
             // forceRefresh 为true 则清空所有folders_开头的缓存
@@ -455,7 +496,10 @@ AppDataSource.initialize().then(async () => {
                 throw new Error('账号不存在');
             }
 
-            const cloud189 = Cloud189Service.getInstance(account);
+            const cloud189 = CloudUtils.getService(account);
+            if (CloudUtils.isQuarkAccount(account) && folderId === '-11') {
+                folderId = '0';
+            }
             const folders = await cloud189.getFolderNodes(folderId);
             if (!folders) {
                 throw new Error('获取目录失败');
@@ -493,7 +537,7 @@ AppDataSource.initialize().then(async () => {
             if (!account) {
                 throw new Error('账号不存在');
             }
-            const cloud189 = Cloud189Service.getInstance(account);
+            const cloud189 = CloudUtils.getService(account);
             // 查询分享目录
             const shareDir = await cloud189.listShareDir(task.shareId, req.query.folderId, task.shareMode);
             if (!shareDir || !shareDir.fileListAO) {
@@ -518,7 +562,7 @@ AppDataSource.initialize().then(async () => {
         if (!task) {
             throw new Error('任务不存在');
         }
-        const cloud189 = Cloud189Service.getInstance(account);
+        const cloud189 = CloudUtils.getService(account);
         const fileList =  await taskService.getAllFolderFiles(cloud189, task);    
         res.json({ success: true, data: fileList });
     }));
@@ -546,7 +590,7 @@ AppDataSource.initialize().then(async () => {
         if(task.enableSystemProxy) {
             throw new Error('系统代理模式已移除');
         }
-        const cloud189 = Cloud189Service.getInstance(account);
+        const cloud189 = CloudUtils.getService(account);
         const result = []
         const successFiles = []
         for (const file of files) {
@@ -601,7 +645,7 @@ AppDataSource.initialize().then(async () => {
         );
         // 修改配置, 重新实例化消息推送
         messageUtil.updateConfig()
-        Cloud189Service.setProxy()
+        CloudUtils.setProxy()
         res.json({success: true, data: null})
     })
 
@@ -830,7 +874,7 @@ AppDataSource.initialize().then(async () => {
     // 全局错误处理中间件
     app.use((err, req, res, next) => {
         console.error('捕获到全局异常:', err.message);
-        res.status(500).json({ success: false, error: error.message });
+        res.status(500).json({ success: false, error: err.message });
     });
 
 
