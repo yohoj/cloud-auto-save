@@ -24,13 +24,19 @@ const AIService = require('./services/ai');
 const CustomPushService = require('./services/message/CustomPushService');
 
 const app = express();
+const configuredOrigins = (process.env.CORS_ORIGINS || ConfigService.getConfigValue('system.corsOrigins') || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
 app.use(cors({
-    origin: '*', // 允许所有来源
+    origin: configuredOrigins.length > 0 ? configuredOrigins : true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-api-key'],
-    credentials: true
+    credentials: configuredOrigins.length > 0
 }));
 app.use(express.json());
+
+const asyncHandler = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 app.use(session({
     store: new FileStore({
@@ -41,7 +47,7 @@ app.use(session({
         logFn: () => {},      // 禁用内部日志
         reapAsync: true,      // 异步清理过期session
     }),
-    secret: 'LhX2IyUcMAz2',
+    secret: ConfigService.getSessionSecret(),
     resave: false,
     saveUninitialized: false,
     cookie: { 
@@ -122,7 +128,7 @@ AppDataSource.initialize().then(async () => {
         if (process.getuid && process.getuid() === 0) {
             await fs.chown(strmBaseDir, parseInt(process.env.PUID || 0), parseInt(process.env.PGID || 0));
         }
-        await fs.chmod(strmBaseDir, 0o777);
+        await fs.chmod(strmBaseDir, parseInt(process.env.STRM_DIR_MODE || '775', 8));
         console.log('STRM目录权限初始化完成');
     } catch (error) {
         console.error('STRM目录权限初始化失败:', error);
@@ -148,7 +154,7 @@ AppDataSource.initialize().then(async () => {
     await SchedulerService.initTaskJobs(taskRepo, taskService);
     
     // 账号相关API
-    app.get('/api/accounts', async (req, res) => {
+    app.get('/api/accounts', asyncHandler(async (req, res) => {
         const accounts = await accountRepo.find();
         // 获取容量
         for (const account of accounts) {
@@ -169,15 +175,28 @@ AppDataSource.initialize().then(async () => {
             account.original_username = account.username;
             // username脱敏
             account.username = account.username.replace(/(.{3}).*(.{4})/, '$1****$2');
+            delete account.password;
+            delete account.cookies;
         }
         res.json({ success: true, data: accounts });
-    });
+    }));
 
     app.post('/api/accounts', async (req, res) => {
         try {
-            const account = accountRepo.create(req.body);
+            let account = accountRepo.create(req.body);
+            if (req.body.id) {
+                const existingAccount = await accountRepo.findOneBy({ id: parseInt(req.body.id) });
+                if (!existingAccount) throw new Error('账号不存在');
+                account = accountRepo.merge(existingAccount, req.body);
+                if (!req.body.password) {
+                    account.password = existingAccount.password;
+                }
+                if (!req.body.cookies) {
+                    account.cookies = existingAccount.cookies;
+                }
+            }
             // 尝试登录, 登录成功写入store, 如果需要验证码, 则返回用户验证码图片
-            if (!account.username.startsWith('n_') && account.password) {
+            if (!account.username.startsWith('n_') && req.body.password) {
                 // 尝试登录
                 const cloud189 = Cloud189Service.getInstance(account);
                 const loginResult = await cloud189.login(account.username, account.password, req.body.validateCode);
@@ -197,6 +216,7 @@ AppDataSource.initialize().then(async () => {
                 }
             }
             await accountRepo.save(account);
+            Cloud189Service.removeInstance(account.username);
             res.json({ success: true, data: null });
         } catch (error) {
             res.json({ success: false, error: error.message });
@@ -272,7 +292,7 @@ AppDataSource.initialize().then(async () => {
         }
     })
     // 任务相关API
-    app.get('/api/tasks', async (req, res) => {
+    app.get('/api/tasks', asyncHandler(async (req, res) => {
         const { status, search } = req.query;
         let whereClause = { }; // 用于构建最终的 where 条件
 
@@ -315,7 +335,7 @@ AppDataSource.initialize().then(async () => {
             task.account.username = task.account.username.replace(/(.{3}).*(.{4})/, '$1****$2');
         });
         res.json({ success: true, data: tasks });
-    });
+    }));
 
     app.post('/api/tasks', async (req, res) => {
         try {
@@ -488,25 +508,21 @@ AppDataSource.initialize().then(async () => {
     });
 
      // 获取目录下的文件
-     app.get('/api/folder/files', async (req, res) => {
+     app.get('/api/folder/files', asyncHandler(async (req, res) => {
         const { accountId, taskId } = req.query;
-        const account = await accountRepo.findOneBy({ id: accountId });
+        const account = await accountRepo.findOneBy({ id: parseInt(accountId) });
         if (!account) {
             throw new Error('账号不存在');
         }
-        const task = await taskRepo.findOneBy({ id: taskId });
+        const task = await taskRepo.findOneBy({ id: parseInt(taskId) });
         if (!task) {
             throw new Error('任务不存在');
         }
         const cloud189 = Cloud189Service.getInstance(account);
-        try {
-            const fileList =  await taskService.getAllFolderFiles(cloud189, task);    
-            res.json({ success: true, data: fileList });
-        }catch (error) {
-            res.status(500).json({ success: false, error: error.message });
-        }
-    });
-    app.post('/api/files/rename', async (req, res) => {
+        const fileList =  await taskService.getAllFolderFiles(cloud189, task);    
+        res.json({ success: true, data: fileList });
+    }));
+    app.post('/api/files/rename', asyncHandler(async (req, res) => {
         const {taskId, accountId, files, sourceRegex, targetRegex } = req.body;
         if (files.length == 0) {
             throw new Error('未获取到需要修改的文件');
@@ -562,7 +578,7 @@ AppDataSource.initialize().then(async () => {
             logTaskEvent(result.join('\n'));
         }
         res.json({ success: true, data: result });
-    });
+    }));
 
     app.post('/api/tasks/executeAll', async (req, res) => {
         taskService.processAllTasks(true);
@@ -571,7 +587,7 @@ AppDataSource.initialize().then(async () => {
 
     // 系统设置
     app.get('/api/settings', async (req, res) => {
-        res.json({success: true, data: ConfigService.getConfig()})
+        res.json({success: true, data: ConfigService.getPublicConfig()})
     })
 
     app.post('/api/settings', async (req, res) => {

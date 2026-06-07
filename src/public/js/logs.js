@@ -16,7 +16,12 @@ function initLogs() {
             document.dispatchEvent(customEvent);
 
             if (data.type === 'history') {
-                logsContainer.innerHTML = data.logs.join('<br>');
+                logsContainer.innerHTML = '';
+                data.logs.forEach(log => {
+                    const div = document.createElement('div');
+                    div.textContent = log;
+                    logsContainer.appendChild(div);
+                });
                 logsContainer.scrollTop = logsContainer.scrollHeight;
             } else if (data.type === 'log') {
                 const div = document.createElement('div');

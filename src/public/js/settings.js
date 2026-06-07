@@ -6,7 +6,7 @@ async function loadSettings() {
         if (data.success) {
             const settings = data.data;
             // 系统apiKey
-            document.getElementById('systemApiKey').value = settings.system?.apiKey || '';
+            document.getElementById('systemApiKey').value = secretInputValue(settings.system?.apiKey);
             // 任务设置
             document.getElementById('taskExpireDays').value = settings.task?.taskExpireDays || 3;
             document.getElementById('taskCheckCron').value = settings.task?.taskCheckCron || '0 19-23 * * *';
@@ -37,7 +37,7 @@ async function loadSettings() {
             document.getElementById('proxyHost').value = settings.proxy?.host || '';
             document.getElementById('proxyPort').value = settings.proxy?.port || '';
             document.getElementById('proxyUsername').value = settings.proxy?.username || '';
-            document.getElementById('proxyPassword').value = settings.proxy?.password || '';
+            document.getElementById('proxyPassword').value = secretInputValue(settings.proxy?.password);
             document.getElementById('proxyTelegram').checked = settings.proxy?.services?.telegram || false;
             document.getElementById('proxyTmdb').checked = settings.proxy?.services?.tmdb || false;
             document.getElementById('proxyOpenAI').checked = settings.proxy?.services?.openai || false;
@@ -50,7 +50,7 @@ async function loadSettings() {
 
             // 账号密码设置
             document.getElementById('systemUserName').value = settings.system?.username || '';
-            document.getElementById('systemPassword').value = settings.system?.password || '';
+            document.getElementById('systemPassword').value = secretInputValue(settings.system?.password);
             
             const enableStrm = settings.strm?.enable || false
             const enableEmby = settings.emby?.enable || false
@@ -58,15 +58,15 @@ async function loadSettings() {
             document.getElementById('enableStrm').checked = enableStrm;
             document.getElementById('enableEmby').checked = enableEmby;
             document.getElementById('embyServer').value = settings.emby?.serverUrl || '';
-            document.getElementById('embyApiKey').value = settings.emby?.apiKey || '';
+            document.getElementById('embyApiKey').value = secretInputValue(settings.emby?.apiKey);
 
             // 飞牛影视设置
             document.getElementById('enableFntv').checked = settings.fntv?.enable || false;
             document.getElementById('fntvBaseUrl').value = settings.fntv?.base_url || '';
             document.getElementById('fntvUsername').value = settings.fntv?.username || '';
-            document.getElementById('fntvPassword').value = settings.fntv?.password || '';
-            document.getElementById('fntvSecretString').value = settings.fntv?.secret_string || '';
-            document.getElementById('fntvApiKey').value = settings.fntv?.api_key || '';
+            document.getElementById('fntvPassword').value = secretInputValue(settings.fntv?.password);
+            document.getElementById('fntvSecretString').value = secretInputValue(settings.fntv?.secret_string);
+            document.getElementById('fntvApiKey').value = secretInputValue(settings.fntv?.api_key);
             document.getElementById('fntvMdbMapping').value = settings.fntv?.mdb_mapping || '';
 
             // tg机器人设置
@@ -76,16 +76,16 @@ async function loadSettings() {
             // cloudSaver设置
             document.getElementById('cloudSaverUrl').value = settings.cloudSaver?.baseUrl || '';
             document.getElementById('cloudSaverUsername').value = settings.cloudSaver?.username || '';
-            document.getElementById('cloudSaverPassword').value = settings.cloudSaver?.password || '';
+            document.getElementById('cloudSaverPassword').value = secretInputValue(settings.cloudSaver?.password);
             // 刮削
             document.getElementById('enableScraper').checked = settings.tmdb?.enableScraper || false;
             // tmdbkey
-            document.getElementById('tmdbApiKey').value = settings.tmdb?.tmdbApiKey || '';
+            document.getElementById('tmdbApiKey').value = secretInputValue(settings.tmdb?.tmdbApiKey);
 
             // openai配置
             document.getElementById('enableOpenAI').checked = settings.openai?.enable || false;
             document.getElementById('openaiBaseUrl').value = settings.openai?.baseUrl || '';
-            document.getElementById('openaiApiKey').value = settings.openai?.apiKey || '';
+            document.getElementById('openaiApiKey').value = secretInputValue(settings.openai?.apiKey);
             document.getElementById('openaiModel').value = settings.openai?.model || '';
             document.getElementById('openaiTemplate').value = settings.openai?.rename?.template || '';
             document.getElementById('openaiMovieTemplate').value = settings.openai?.rename?.movieTemplate || '';
@@ -93,11 +93,11 @@ async function loadSettings() {
             // alist
             document.getElementById('enableAlist').checked = settings.alist?.enable || false;
             document.getElementById('alistServer').value = settings.alist?.baseUrl || '';
-            document.getElementById('alistApiKey').value = settings.alist?.apiKey || '';
+            document.getElementById('alistApiKey').value = secretInputValue(settings.alist?.apiKey);
 
             // pushplus
             document.getElementById('enablePushPlus').checked = settings.pushplus?.enable || false;
-            document.getElementById('pushplusToken').value = settings.pushplus?.token || '';
+            document.getElementById('pushplusToken').value = secretInputValue(settings.pushplus?.token);
             document.getElementById('pushplusTopic').value = settings.pushplus?.topic || '';
             document.getElementById('pushplusChannel').value = settings.pushplus?.channel || '';
             document.getElementById('pushplusWebhook').value = settings.pushplus?.webhook || '';
@@ -192,7 +192,7 @@ async function saveSettings() {
         customPush: customPushConfigs
     };
     // taskRetryInterval不能少于60秒
-    if (settings.task.taskRetryInterval < 60) {
+    if (settings.task.retryInterval < 60) {
         message.warning("任务重试间隔不能小于60秒")
         return 
     }

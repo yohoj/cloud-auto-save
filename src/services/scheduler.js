@@ -5,6 +5,7 @@ const { MessageUtil } = require('./message');
 
 class SchedulerService {
     static taskJobs = new Map();
+    static runningJobs = new Set();
     static messageUtil = new MessageUtil();
 
     static async initTaskJobs(taskRepo, taskService) {
@@ -24,7 +25,7 @@ class SchedulerService {
             // 遍历每个cron表达式
             taskCheckCrons.forEach((cronExpression, index) => {
                 this.saveDefaultTaskJob(`任务定时检查-${index}`, cronExpression, async () => {
-                    taskService.processAllTasks();
+                    await taskService.processAllTasks();
                 });
             });
         }
@@ -56,20 +57,22 @@ class SchedulerService {
         if (task.enableCron && task.cronExpression) {
             logTaskEvent(`创建定时任务 ${taskName}, 表达式: ${task.cronExpression}`)
             const job = cron.schedule(task.cronExpression, async () => {
-                logTaskEvent(`================================`);
-                logTaskEvent(`任务[${taskName}]自定义定时检查...`);
-                // 重新获取最新的任务信息
-                const latestTask = await taskService.getTaskById(task.id);
-                if (!latestTask) {
-                    logTaskEvent(`任务[${taskName}]已被删除，跳过执行`);
-                    this.removeTaskJob(task.id);
-                    return;
-                }
-                const result = await taskService.processTask(latestTask);
-                if (result) {
-                    this.messageUtil.sendMessage(result)
-                }
-                logTaskEvent(`================================`);
+                await this.runWithLock(`task:${task.id}`, `任务[${taskName}]仍在执行，跳过本轮定时检查`, async () => {
+                    logTaskEvent(`================================`);
+                    logTaskEvent(`任务[${taskName}]自定义定时检查...`);
+                    // 重新获取最新的任务信息
+                    const latestTask = await taskService.getTaskById(task.id);
+                    if (!latestTask) {
+                        logTaskEvent(`任务[${taskName}]已被删除，跳过执行`);
+                        this.removeTaskJob(task.id);
+                        return;
+                    }
+                    const result = await taskService.processTask(latestTask);
+                    if (result) {
+                        this.messageUtil.sendMessage(result)
+                    }
+                    logTaskEvent(`================================`);
+                });
             });
             this.taskJobs.set(task.id, job);
             logTaskEvent(`定时任务 ${taskName}, 表达式: ${task.cronExpression} 已设置`)
@@ -86,7 +89,9 @@ class SchedulerService {
             logTaskEvent(`定时任务[${name}]表达式无效，跳过...`);
             return;
         }
-        const job = cron.schedule(cronExpression, task);
+        const job = cron.schedule(cronExpression, async () => {
+            await this.runWithLock(`job:${name}`, `定时任务[${name}]仍在执行，跳过本轮`, task);
+        });
         this.taskJobs.set(name, job);
         logTaskEvent(`定时任务 ${name}, 表达式: ${cronExpression} 已设置`)
         return job;
@@ -108,7 +113,7 @@ class SchedulerService {
             // 遍历每个cron表达式
             taskCheckCrons.forEach((cronExpression, index) => {
                 this.saveDefaultTaskJob(`任务定时检查-${index}`, cronExpression, async () => {
-                    taskService.processAllTasks();
+                    await taskService.processAllTasks();
                 });
             });
         }
@@ -138,6 +143,21 @@ class SchedulerService {
             async () => taskService.clearRecycleBin(enableAutoClearRecycle, enableAutoClearFamilyRecycle)
         );
         return true;
+    }
+
+    static async runWithLock(lockKey, skipMessage, taskFn) {
+        if (this.runningJobs.has(lockKey)) {
+            logTaskEvent(skipMessage);
+            return;
+        }
+        this.runningJobs.add(lockKey);
+        try {
+            return await taskFn();
+        } catch (error) {
+            logTaskEvent(`定时任务执行失败: ${error.message}`);
+        } finally {
+            this.runningJobs.delete(lockKey);
+        }
     }
 }
 

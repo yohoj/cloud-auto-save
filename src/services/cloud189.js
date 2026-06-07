@@ -14,6 +14,10 @@ class Cloud189Service {
         return this.instances.get(key);
     }
 
+    static removeInstance(username) {
+        this.instances.delete(username);
+    }
+
     constructor(account) {
         const _options = {
             username: account.username,
@@ -44,7 +48,14 @@ class Cloud189Service {
             return await this.client.request('https://cloud.189.cn' + action + '?noCach=' + noCache, body).json();
         } catch (error) {
             if (error instanceof got.HTTPError) {
-                const responseBody = JSON.parse(error.response.body);
+                const rawBody = error.response?.body || '';
+                let responseBody = null;
+                try {
+                    responseBody = JSON.parse(rawBody);
+                } catch (parseError) {
+                    logTaskEvent(`请求天翼云盘接口失败: HTTP ${error.response?.statusCode || 'unknown'} ${rawBody.slice(0, 200)}`);
+                    return null;
+                }
                 if (responseBody.res_code === "ShareAuditWaiting") {
                     return responseBody;
                 }
@@ -61,7 +72,7 @@ class Cloud189Service {
                         res_msg: "文件不存在"
                     }
                 }
-                logTaskEvent('请求天翼云盘接口失败:' + error.response.body);
+                logTaskEvent('请求天翼云盘接口失败:' + rawBody);
             } else if (error instanceof got.TimeoutError) {
                 logTaskEvent('请求天翼云盘接口失败: 请求超时, 请检查是否能访问天翼云盘');
             } else if (error instanceof got.RequestError) {

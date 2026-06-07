@@ -59,22 +59,28 @@ async function fetchTasks() {
             taskList.push(task)
             const progressRing = task.totalEpisodes ? createProgressRing(task.currentEpisodes || 0, task.totalEpisodes) : '';
             const taskName = task.shareFolderName?(task.resourceName + '/' + task.shareFolderName): task.resourceName || '未知'
+            const safeTaskName = escapeHtml(taskName);
+            const safeShareLink = escapeHtml(task.shareLink);
+            const safeAccountName = escapeHtml(task.account?.username || '');
+            const safeRealFolderName = escapeHtml(task.realFolderName || task.realFolderId);
+            const safeRemark = escapeHtml(task.remark || '');
+            const safeStatus = escapeHtml(task.status);
             const cronIcon = task.enableCron ? '<span class="cron-icon" title="已开启自定义定时任务">⏰</span>' : '';
             tbody.innerHTML += `
-                <tr data-status='${task.status}' data-task-id='${task.id}' data-name='${taskName}'>
+                <tr data-status='${safeStatus}' data-task-id='${task.id}' data-name='${safeTaskName}'>
                     <td>
                         <button class="btn-danger" onclick="deleteTask(${task.id})">删除</button>
                         <button class="btn-warning" onclick="executeTask(${task.id})">执行</button>
                         <button onclick="showEditTaskModal(${task.id})">修改</button>
                     </td>
-                    <td data-label="资源名称">${cronIcon}<a href="${task.shareLink}" target="_blank" class='ellipsis' title="${taskName}">${taskName}</a></td>
-                    <td data-label="账号">${task.account.username}</td>
+                    <td data-label="资源名称">${cronIcon}<a href="${safeShareLink}" target="_blank" class='ellipsis' title="${safeTaskName}">${safeTaskName}</a></td>
+                    <td data-label="账号">${safeAccountName}</td>
                     <!--<td data-label="首次保存目录"><a href="https://cloud.189.cn/web/main/file/folder/${task.targetFolderId}" target="_blank">${task.targetFolderId}</a></td>-->
-                     <td data-label="更新目录"><a href="javascript:void(0)" onclick="showFileListModal('${task.id}')" class='ellipsis'>${task.realFolderName || task.realFolderId}</a></td>
+                     <td data-label="更新目录"><a href="javascript:void(0)" onclick="showFileListModal('${task.id}')" class='ellipsis'>${safeRealFolderName}</a></td>
                     <td data-label="更新数/总数">${task.currentEpisodes || 0}/${task.totalEpisodes || '未知'}${progressRing}</td>
                     <td data-label="转存时间">${formatDateTime(task.lastFileUpdateTime)}</td>
-                    <td data-label="备注">${task.remark?task.remark:''}</td>
-                    <td data-label="状态"><span class="status-badge status-${task.status}">${formatStatus(task.status)}</span></td>
+                    <td data-label="备注">${safeRemark}</td>
+                    <td data-label="状态"><span class="status-badge status-${safeStatus}">${formatStatus(task.status)}</span></td>
                 </tr>
             `;
         });
@@ -909,8 +915,8 @@ async function parseShareLink() {
             shareFoldersList.innerHTML = data.data.map(folder => `
                 <div class="folder-item">
                     <label>
-                        <input type="checkbox" name="chooseShareFolder" value="${folder.id}" checked>
-                        ${folder.name}
+                        <input type="checkbox" name="chooseShareFolder" value="${escapeHtml(folder.id)}" checked>
+                        ${escapeHtml(folder.name)}
                     </label>
                 </div>
             `).join('');

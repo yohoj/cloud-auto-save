@@ -6,7 +6,10 @@
   "scripts": {
     "start": "node dist/index.js",
     "build": "tsc",
-    "dev": "ts-node src/index.js"
+    "dev": "ts-node src/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "tsc --noEmit"
   },
   "dependencies": {
     "@netdrive-sdk/log": "1.0.0",

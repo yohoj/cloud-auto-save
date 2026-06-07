@@ -13,7 +13,7 @@ class Message {
     show(content, type = 'info', duration = 3000) {
         const messageElement = document.createElement('div');
         messageElement.className = `message message-${type}`;
-        messageElement.innerHTML = content;
+        messageElement.textContent = content;
 
         this.container.appendChild(messageElement);
 

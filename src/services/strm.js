@@ -13,10 +13,12 @@ class StrmService {
         // 从环境变量获取 PUID 和 PGID，默认值设为 0
         this.puid = process.env.PUID || 0;
         this.pgid = process.env.PGID || 0;
+        this.dirMode = parseInt(process.env.STRM_DIR_MODE || '775', 8);
+        this.fileMode = parseInt(process.env.STRM_FILE_MODE || '664', 8);
         this.messageUtil = new MessageUtil();
     }
 
-    // 确保目录存在并设置权限和组，递归创建的所有目录都设置为 777 权限
+    // 确保目录存在并设置权限和组
     async _ensureDirectoryExists(dirPath) {
         // 确保使用相对路径
         const relativePath = dirPath.startsWith(this.baseDir) 
@@ -34,7 +36,7 @@ class StrmService {
                     if (process.getuid && process.getuid() === 0) {
                         await fs.chown(currentPath, parseInt(this.puid), parseInt(this.pgid));
                     }
-                    await fs.chmod(currentPath, 0o777);
+                    await fs.chmod(currentPath, this.dirMode);
                 } catch (error) {
                     if (error.code !== 'EEXIST') {
                         throw new Error(`创建目录失败: ${error.message}`);
@@ -115,7 +117,7 @@ class StrmService {
                     if (process.getuid && process.getuid() === 0) {
                         await fs.chown(strmPath, parseInt(this.puid), parseInt(this.pgid));
                     }
-                    await fs.chmod(strmPath, 0o777);
+                    await fs.chmod(strmPath, this.fileMode);
                     results.push({
                         originalFile: fileName,
                         strmFile: `${fileNameWithoutExt}.strm`,
@@ -250,7 +252,7 @@ class StrmService {
                     if (process.getuid && process.getuid() === 0) {
                         await fs.chown(strmPath, parseInt(this.puid), parseInt(this.pgid));
                     }
-                    await fs.chmod(strmPath, 0o777);
+                    await fs.chmod(strmPath, this.fileMode);
 
                     stats.success++;
                     logTaskEvent(`生成STRM文件成功: ${strmPath}`);

@@ -1,5 +1,8 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const SECRET_PLACEHOLDER = '********';
+
 class ConfigService {
   constructor() {
     // 配置文件路径
@@ -46,7 +49,9 @@ class ConfigService {
         services: {
           telegram: true,
           tmdb: true,
-          cloud189: false
+          openai: true,
+          cloud189: false,
+          customPush: false
         }
       },
       bark: {
@@ -80,7 +85,9 @@ class ConfigService {
         username: 'admin',
         password: 'admin',
         baseUrl: '',
-        apiKey: ''
+        apiKey: '',
+        corsOrigins: '',
+        sessionSecret: ''
       },
       strm: {
         enable: false,
@@ -97,7 +104,8 @@ class ConfigService {
       },
       tmdb: {
         enableScraper: false,
-        apiKey: ''
+        apiKey: '',
+        tmdbApiKey: ''
       },
       openai: {
         enable: false,
@@ -116,6 +124,29 @@ class ConfigService {
       },
       customPush: [] // 自定义推送
     };
+    this._configSchema = JSON.parse(JSON.stringify(this._config));
+    this._sensitiveKeys = new Set([
+      'telegram.botToken',
+      'telegram.bot.botToken',
+      'proxy.password',
+      'bark.key',
+      'pushplus.token',
+      'pushplus.webhook',
+      'pushplus.to',
+      'smartStrm.webhook',
+      'fntv.password',
+      'fntv.secret_string',
+      'fntv.api_key',
+      'system.password',
+      'system.apiKey',
+      'system.sessionSecret',
+      'emby.apiKey',
+      'cloudSaver.password',
+      'tmdb.apiKey',
+      'tmdb.tmdbApiKey',
+      'openai.apiKey',
+      'alist.apiKey'
+    ]);
     this._init();
   }
 
@@ -153,6 +184,11 @@ class ConfigService {
   _saveConfig() {
     try {
       fs.writeFileSync(this._configFile, JSON.stringify(this._config, null, 2));
+      try {
+        fs.chmodSync(this._configFile, 0o600);
+      } catch (chmodError) {
+        console.warn('系统配置权限设置失败:', chmodError.message);
+      }
     } catch (error) {
       console.error('系统配置保存失败:', error);
     }
@@ -162,9 +198,80 @@ class ConfigService {
     return this._config;
   }
 
+  getPublicConfig() {
+    return this._maskSensitiveConfig(this._config);
+  }
+
   setConfig(config) {
-    this._config = { ...this._config, ...config };
+    const filteredConfig = this._filterAllowedConfig(config, this._configSchema);
+    this._config = this._mergeConfig(this._config, filteredConfig);
     this._saveConfig();
+  }
+
+  _filterAllowedConfig(source, schema) {
+    if (!source || typeof source !== 'object') return {};
+    if (Array.isArray(schema)) {
+      return Array.isArray(source) ? source : [];
+    }
+    const result = {};
+    for (const key of Object.keys(schema)) {
+      if (Object.prototype.hasOwnProperty.call(source, key)) {
+        const sourceValue = source[key];
+        const schemaValue = schema[key];
+        if (schemaValue && typeof schemaValue === 'object' && !Array.isArray(schemaValue)) {
+          result[key] = this._filterAllowedConfig(sourceValue, schemaValue);
+        } else {
+          result[key] = sourceValue;
+        }
+      }
+    }
+    return result;
+  }
+
+  _mergeConfig(target, source, prefix = '') {
+    const result = Array.isArray(target) ? [...target] : { ...target };
+    for (const key of Object.keys(source || {})) {
+      const currentPath = prefix ? `${prefix}.${key}` : key;
+      const sourceValue = source[key];
+      const targetValue = target?.[key];
+
+      if (this._sensitiveKeys.has(currentPath) && (sourceValue === '' || sourceValue === SECRET_PLACEHOLDER)) {
+        continue;
+      }
+      if (
+        sourceValue &&
+        typeof sourceValue === 'object' &&
+        !Array.isArray(sourceValue) &&
+        targetValue &&
+        typeof targetValue === 'object' &&
+        !Array.isArray(targetValue)
+      ) {
+        result[key] = this._mergeConfig(targetValue, sourceValue, currentPath);
+      } else {
+        result[key] = sourceValue;
+      }
+    }
+    return result;
+  }
+
+  _maskSensitiveConfig(config, prefix = '') {
+    if (Array.isArray(config)) {
+      return config.map(item => this._maskSensitiveConfig(item, prefix));
+    }
+    if (!config || typeof config !== 'object') {
+      return config;
+    }
+    const result = {};
+    for (const key of Object.keys(config)) {
+      const currentPath = prefix ? `${prefix}.${key}` : key;
+      const value = config[key];
+      if (this._sensitiveKeys.has(currentPath)) {
+        result[key] = value ? SECRET_PLACEHOLDER : '';
+      } else {
+        result[key] = this._maskSensitiveConfig(value, currentPath);
+      }
+    }
+    return result;
   }
 
   getConfigValue(key, defaultValue = null) {
@@ -188,6 +295,18 @@ class ConfigService {
     }
     current[keys[keys.length - 1]] = value;
     this._saveConfig();
+  }
+
+  getSessionSecret() {
+    const envSecret = process.env.SESSION_SECRET;
+    if (envSecret) return envSecret;
+
+    let sessionSecret = this.getConfigValue('system.sessionSecret');
+    if (!sessionSecret) {
+      sessionSecret = crypto.randomBytes(32).toString('hex');
+      this.setConfigValue('system.sessionSecret', sessionSecret);
+    }
+    return sessionSecret;
   }
 }
 

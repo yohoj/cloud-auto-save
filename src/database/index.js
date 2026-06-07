@@ -5,10 +5,12 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
+const enableSchemaSync = process.env.TYPEORM_SYNC === 'true' || process.env.NODE_ENV !== 'production';
+
 const AppDataSource = new DataSource({
     type: 'sqlite',
     database: path.join(__dirname, '../../data/database.sqlite'),
-    synchronize: true,
+    synchronize: enableSchemaSync,
     logging: false,
     maxQueryExecutionTime: 1000, // 查询超时设置
     enableWAL: true,   // 启用 WAL 模式提升性能

@@ -19,6 +19,15 @@ async function fetchAccounts(updateSelect = false) {
         }
         accountsList = data.data
         data.data.forEach(account => {
+            const safeUsername = escapeHtml(account.username);
+            const safeAlias = escapeHtml(account.alias || '');
+            const safeAliasArg = escapeJsString(account.alias || '');
+            const safeCloudStrmPrefix = escapeHtml(account.cloudStrmPrefix || '');
+            const safeCloudStrmPrefixArg = escapeJsString(account.cloudStrmPrefix || '');
+            const safeLocalStrmPrefix = escapeHtml(account.localStrmPrefix || '');
+            const safeLocalStrmPrefixArg = escapeJsString(account.localStrmPrefix || '');
+            const safeEmbyPathReplace = escapeHtml(account.embyPathReplace || '');
+            const safeEmbyPathReplaceArg = escapeJsString(account.embyPathReplace || '');
             tbody.innerHTML += `
                 <tr>
                     <td><span class="default-star" onclick="setDefaultAccount(${account.id})" title="设为默认账号">
@@ -27,20 +36,20 @@ async function fetchAccounts(updateSelect = false) {
                          <button class="btn-primary" onclick="editAccount(${account.id})">修改</button>
                         <button class="btn-danger" onclick="deleteAccount(${account.id})">删除</button>
                         </td>
-                    <td data-label='账户名'>${account.username}</td>
-                    <td data-label='别名' onclick="updateAlias(${account.id}, '${account.alias || ''}')">${account.alias}</td>
+                    <td data-label='账户名'>${safeUsername}</td>
+                    <td data-label='别名' onclick="updateAlias(${account.id}, '${safeAliasArg}')">${safeAlias}</td>
                     <td data-label='个人容量'>${formatBytes(account.capacity.cloudCapacityInfo.usedSize) + '/' + formatBytes(account.capacity.cloudCapacityInfo.totalSize)}</td>
                     <td data-label='家庭容量'>${formatBytes(account.capacity.familyCapacityInfo.usedSize) + '/' + formatBytes(account.capacity.familyCapacityInfo.totalSize)}</td>
-                    <td class='strm-prefix' data-label='媒体目录' style="cursor: pointer;" onclick="updateCloudStrmPrefix(${account.id}, '${account.cloudStrmPrefix || ''}')">${account.cloudStrmPrefix || ''}</td>
-                    <td class='strm-prefix' data-label='本地目录' style="cursor: pointer;" onclick="updateLocalStrmPrefix(${account.id}, '${account.localStrmPrefix || ''}')">${account.localStrmPrefix || ''}</td>
-                    <td class='emby-path-replace' data-label='Emby路径替换' style="cursor: pointer;" onclick="updateEmbyPathReplace(${account.id}, '${account.embyPathReplace || ''}')">${account.embyPathReplace || ''}</td>
+                    <td class='strm-prefix' data-label='媒体目录' style="cursor: pointer;" onclick="updateCloudStrmPrefix(${account.id}, '${safeCloudStrmPrefixArg}')">${safeCloudStrmPrefix}</td>
+                    <td class='strm-prefix' data-label='本地目录' style="cursor: pointer;" onclick="updateLocalStrmPrefix(${account.id}, '${safeLocalStrmPrefixArg}')">${safeLocalStrmPrefix}</td>
+                    <td class='emby-path-replace' data-label='Emby路径替换' style="cursor: pointer;" onclick="updateEmbyPathReplace(${account.id}, '${safeEmbyPathReplaceArg}')">${safeEmbyPathReplace}</td>
                 </tr>
             `;
             if (updateSelect) {
                 // n_打头的账号不显示在下拉列表中
                 if (!account.username.startsWith('n_')) {
                     select.innerHTML += `
-                    <option value="${account.id}" ${account.isDefault?"selected":''}>${account.username}</option>
+                    <option value="${account.id}" ${account.isDefault?"selected":''}>${safeUsername}</option>
                 `;
                 }
             }
@@ -114,8 +123,8 @@ async function editAccount(id) {
 
     // 填充表单数据
     document.getElementById('username').value = chooseAccount.username;
-    document.getElementById('password').value = chooseAccount.password; // 出于安全考虑，不填充密码
-    document.getElementById('cookie').value = chooseAccount.cookies || '';
+    document.getElementById('password').value = '';
+    document.getElementById('cookie').value = '';
     document.getElementById('alias').value = chooseAccount.alias || '';
     document.getElementById('cloudStrmPrefix').value = chooseAccount.cloudStrmPrefix || '';
     document.getElementById('localStrmPrefix').value = chooseAccount.localStrmPrefix || '';
@@ -144,7 +153,7 @@ async function createAccount() {
         message.warning('用户名不能为空');
         return;
     }
-    if (!password && !cookies) {
+    if (!chooseAccount?.id && !password && !cookies) {
         message.warning('密码和Cookie不能同时为空');
         return;
     }
