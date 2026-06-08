@@ -92,7 +92,7 @@
                     <div class="modal-header">
                         <h3>添加账号</h3>
                     </div>
-                    <form id="accountForm">
+                    <form id="accountForm" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true">
                         <div class="form-body">
                             <div class="form-group">
                                 <label for="cloudType">网盘类型</label>
@@ -103,11 +103,15 @@
                             </div>
                             <div class="form-group">
                                 <label for="username">用户名</label>
-                                <input type="text" id="username" required>
+                                <input type="text" id="username" name="cloud_account" required autocomplete="off"
+                                    data-lpignore="true" data-1p-ignore="true" data-bwignore="true"
+                                    spellcheck="false">
                             </div>
                             <div class="form-group">
                                 <label for="password">密码</label>
-                                <input type="password" id="password">
+                                <input type="text" id="password" name="cloud_secret" class="secret-config-field"
+                                    autocomplete="off" data-lpignore="true" data-1p-ignore="true"
+                                    data-bwignore="true" spellcheck="false">
                             </div>
                             <!---验证码-->
                             <div class="form-group" id="account-captcha" style="display: none;">
@@ -361,7 +365,7 @@
         </div>
 
         <div id="settingsTab" class="tab-content">
-            <form id="settingsForm">
+            <form id="settingsForm" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true">
                 <div class="form-group">
                     <label for="systemApiKey">系统apiKey</label>
                     <div style="display: flex; gap: 10px; align-items: center;">
@@ -514,7 +518,9 @@
                             <input type="text" id="proxyHost" placeholder="代理地址: 127.0.0.1">
                             <input type="number" id="proxyPort" placeholder="代理端口">
                             <input type="text" id="proxyUsername" placeholder="账号 如果有">
-                            <input type="text" id="proxyPassword" placeholder="密码 如果有">
+                            <input type="text" id="proxyPassword" name="proxy_secret" class="secret-config-field"
+                                placeholder="密码 如果有" autocomplete="off" data-lpignore="true"
+                                data-1p-ignore="true" data-bwignore="true" spellcheck="false">
                         </div>
                         <div class="proxy-options" style="margin-top: 10px;">
                             <label style="display: block; margin-bottom: 5px;">启用代理的服务：</label>
@@ -547,8 +553,12 @@
                 <div class="form-group">
                     <label for="proxySettings">用户名密码设置</label>
                     <div class="proxy-settings">
-                        <input type="text" id="systemUserName" placeholder="登录账号">
-                        <input type="password" id="systemPassword" placeholder="登录密码">
+                        <input type="text" id="systemUserName" name="system_account" placeholder="登录账号"
+                            autocomplete="off" data-lpignore="true" data-1p-ignore="true"
+                            data-bwignore="true" spellcheck="false">
+                        <input type="text" id="systemPassword" name="system_secret" class="secret-config-field"
+                            placeholder="登录密码" autocomplete="off" data-lpignore="true"
+                            data-1p-ignore="true" data-bwignore="true" spellcheck="false">
                     </div>
                 </div>
 
@@ -557,7 +567,7 @@
         </div>
 
         <div id="mediaTab" class="tab-content">
-            <form id="mediaForm">
+            <form id="mediaForm" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true">
                 <div class="form-group">
                     <label>OpenAI 设置</label>
                     <div class="push-settings">
@@ -667,9 +677,13 @@
                             <label for="fntvBaseUrl">服务器地址</label>
                             <input type="text" id="fntvBaseUrl" placeholder="例如: http://10.0.0.6:5666">
                             <label for="fntvUsername">用户名</label>
-                            <input type="text" id="fntvUsername" placeholder="飞牛影视用户名">
+                            <input type="text" id="fntvUsername" name="fntv_account" placeholder="飞牛影视用户名"
+                                autocomplete="off" data-lpignore="true" data-1p-ignore="true"
+                                data-bwignore="true" spellcheck="false">
                             <label for="fntvPassword">密码</label>
-                            <input type="password" id="fntvPassword" placeholder="飞牛影视密码">
+                            <input type="text" id="fntvPassword" name="fntv_secret" class="secret-config-field"
+                                placeholder="飞牛影视密码" autocomplete="off" data-lpignore="true"
+                                data-1p-ignore="true" data-bwignore="true" spellcheck="false">
                             <label for="fntvSecretString">密钥字符串 (secret_string)</label>
                             <input type="text" id="fntvSecretString" placeholder="飞牛影视 secret_string">
                             <label for="fntvApiKey">API Key</label>
@@ -690,8 +704,12 @@
                     <label>CloudSaver 设置</label>
                     <div class="proxy-settings" style="border: 1px solid var(--border-color);padding: 12px;">
                         <input type="text" id="cloudSaverUrl" placeholder="服务地址: http://localhost:8008">
-                        <input type="text" id="cloudSaverUsername" placeholder="账号">
-                        <input type="password" id="cloudSaverPassword" placeholder="密码">
+                        <input type="text" id="cloudSaverUsername" name="cloudsaver_account" placeholder="账号"
+                            autocomplete="off" data-lpignore="true" data-1p-ignore="true"
+                            data-bwignore="true" spellcheck="false">
+                        <input type="text" id="cloudSaverPassword" name="cloudsaver_secret" class="secret-config-field"
+                            placeholder="密码" autocomplete="off" data-lpignore="true"
+                            data-1p-ignore="true" data-bwignore="true" spellcheck="false">
                     </div>
                 </div>
 

@@ -38,6 +38,22 @@ class CloudUtils {
         QuarkService.setProxy();
     }
 
+    static getShareLinkCloudType(shareLink) {
+        let text = (shareLink || '').trim();
+        try {
+            text = decodeURIComponent(text);
+        } catch (error) {
+            // 如果不是合法的 URL 编码，继续使用原文本判断。
+        }
+        if (/pan\.quark\.cn|drive\.quark\.cn|quark\.cn\/s\//i.test(text)) {
+            return 'quark';
+        }
+        if (/cloud\.189\.cn|h5\.cloud\.189\.cn|content\.21cn\.com/i.test(text)) {
+            return 'cloud189';
+        }
+        return '';
+    }
+
     static parseCloudShare(shareText) {
         const text = decodeURIComponent((shareText || '').trim());
         if (/https?:\/\/[^\s]*(pan\.quark\.cn|drive\.quark\.cn|quark\.cn\/s\/)/i.test(text)) {

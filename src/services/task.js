@@ -212,6 +212,7 @@ class TaskService {
             taskDto.accessCode = accessCode;
         }
         taskDto.shareLink = parseShareLink;
+        this._validateAccountMatchesShareLink(account, taskDto.shareLink);
         const cloud189 = CloudUtils.getService(account);
         const shareCode = CloudUtils.parseShareCode(taskDto.shareLink, account);
         const shareInfo = await this.getShareInfo(cloud189, shareCode, taskDto.accessCode);
@@ -1245,12 +1246,23 @@ class TaskService {
         })
     }
 
+    _validateAccountMatchesShareLink(account, shareLink) {
+        const shareCloudType = CloudUtils.getShareLinkCloudType(shareLink);
+        if (!shareCloudType) return;
+
+        const accountCloudType = CloudUtils.isQuarkAccount(account) ? 'quark' : 'cloud189';
+        if (shareCloudType !== accountCloudType) {
+            throw new Error(`${shareCloudType === 'quark' ? '夸克网盘' : '天翼云盘'}分享链接只能使用${shareCloudType === 'quark' ? '夸克网盘' : '天翼云盘'}账号`);
+        }
+    }
+
     // 根据分享链接获取文件目录组合 资源名 资源名/子目录1 资源名/子目录2
     async parseShareFolderByShareLink(shareLink, accountId, accessCode) {
         const account = await this._getAccountById(accountId)
         if (!account) {
             throw new Error('账号不存在')
         }
+        this._validateAccountMatchesShareLink(account, shareLink);
         const cloud189 = CloudUtils.getService(account);
         const shareCode = CloudUtils.parseShareCode(shareLink, account)
         const shareInfo = await this.getShareInfo(cloud189, shareCode, accessCode)

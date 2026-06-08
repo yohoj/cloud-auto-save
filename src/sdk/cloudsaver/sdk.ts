@@ -30,6 +30,11 @@ interface SearchResponse {
     }[];
 }
 
+const SUPPORTED_CLOUD_LINK_PATTERNS = [
+    /cloud\.189\.cn/i,
+    /quark\.cn\/s\//i
+];
+
 class CloudSaverSDK {
     private static instance: CloudSaverSDK;
     private tokenPath: string;
@@ -122,6 +127,10 @@ class CloudSaverSDK {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    private isSupportedCloudLink(link: string): boolean {
+        return SUPPORTED_CLOUD_LINK_PATTERNS.some(pattern => pattern.test(link));
+    }
+
     private async autoLogin(): Promise<boolean> {
         if (!this.username || !this.password) {
             throw new Error('CloudSaverSDK 未启用');
@@ -178,9 +187,7 @@ class CloudSaverSDK {
                 .flatMap(item => item.list)
                 .filter(item => 
                     item.cloudLinks?.length > 0 && 
-                    item.cloudLinks.some(link => 
-                        link.link.includes('cloud.189.cn')
-                    )
+                    item.cloudLinks.some(link => this.isSupportedCloudLink(link.link))
                 );
 
                 // 先按资源去重
@@ -194,9 +201,7 @@ class CloudSaverSDK {
                 // 将每个资源的多个链接拆分为独立资源
                 const result: CloudResource[] = [];
                 uniqueResources.forEach(resource => {
-                    const cloudLinks = resource.cloudLinks.filter(link => 
-                        link.link.includes('cloud.189.cn')
-                    );
+                    const cloudLinks = resource.cloudLinks.filter(link => this.isSupportedCloudLink(link.link));
                     cloudLinks.forEach(cloudLink => {
                         result.push({
                             messageId: resource.messageId,

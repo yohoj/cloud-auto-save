@@ -53,6 +53,55 @@ function getCloudTypeMeta(cloudType) {
         : { label: '天翼', className: 'cloud-tag-cloud189' };
 }
 
+function getShareLinkCloudType(shareLink) {
+    let text = (shareLink || '').trim();
+    try {
+        text = decodeURIComponent(text);
+    } catch (error) {
+        // 如果不是合法的 URL 编码，继续使用原文本判断。
+    }
+    if (/pan\.quark\.cn|drive\.quark\.cn|quark\.cn\/s\//i.test(text)) {
+        return 'quark';
+    }
+    if (/cloud\.189\.cn|h5\.cloud\.189\.cn|content\.21cn\.com/i.test(text)) {
+        return 'cloud189';
+    }
+    return '';
+}
+
+function syncCreateTaskAccountOptions() {
+    const accountSelect = document.getElementById('accountId');
+    const shareLink = document.getElementById('shareLink')?.value || '';
+    if (!accountSelect) return;
+
+    const shareCloudType = getShareLinkCloudType(shareLink);
+    const options = Array.from(accountSelect.options);
+    options.forEach(option => {
+        const shouldDisable = !!shareCloudType && option.dataset.cloudType !== shareCloudType;
+        option.disabled = shouldDisable;
+        option.hidden = shouldDisable;
+    });
+
+    const selectedOption = accountSelect.selectedOptions[0];
+    if (selectedOption && selectedOption.disabled) {
+        const firstAvailableOption = options.find(option => !option.disabled);
+        accountSelect.value = firstAvailableOption ? firstAvailableOption.value : '';
+        accountSelect.dispatchEvent(new Event('change'));
+    }
+}
+
+function validateShareLinkAccountMatch(shareLink, accountId) {
+    const shareCloudType = getShareLinkCloudType(shareLink);
+    if (!shareCloudType || !accountId) return true;
+
+    const selectedOption = document.querySelector(`#accountId option[value="${accountId}"]`);
+    if (selectedOption?.dataset.cloudType === shareCloudType) return true;
+
+    const cloudTypeName = shareCloudType === 'quark' ? '夸克网盘' : '天翼云盘';
+    message.warning(`${cloudTypeName}分享链接只能选择${cloudTypeName}账号`);
+    return false;
+}
+
 async function fetchTasks() {
     taskList = []
     loading.show()
@@ -181,6 +230,7 @@ function openCreateTaskModal() {
         document.getElementById('targetFolderId').value = lastTargetFolderId;
         document.getElementById('targetFolder').value = lastTargetFolderName; 
     }
+    syncCreateTaskAccountOptions();
     document.getElementsByClassName('cronExpression-box')[0].style.display = 'none';
     document.getElementById('createTaskModal').style.display = 'block';
 }
@@ -191,6 +241,7 @@ function closeCreateTaskModal() {
     document.getElementById('createTaskModal').style.display = 'none';
     document.getElementById('taskName').readOnly = true
     document.getElementById('taskForm').reset();
+    syncCreateTaskAccountOptions();
 }
 
 // 初始化任务表单
@@ -201,6 +252,7 @@ function initTaskForm() {
     const shareInputs = document.querySelectorAll('[data-share-input]');
     shareInputs.forEach(input => {
         input.addEventListener('blur', debouncedHandleShare);
+        input.addEventListener('input', syncCreateTaskAccountOptions);
     });
 
     // 修改原有的表单提交处理
@@ -222,6 +274,9 @@ function initTaskForm() {
         const targetRegex = document.getElementById('ctTargetRegex').value;
         const taskName = document.getElementById('taskName').value.trim();
         const enableTaskScraper = document.getElementById('enableTaskScraper').checked;
+        if (!validateShareLinkAccountMatch(shareLink, accountId)) {
+            return;
+        }
         if (!taskName) {
             message.warning('任务名称不能为空');
             return;

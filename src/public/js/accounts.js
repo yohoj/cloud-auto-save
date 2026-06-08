@@ -52,11 +52,14 @@ async function fetchAccounts(updateSelect = false) {
                 // n_打头的账号不显示在下拉列表中
                 if (!account.original_username?.startsWith('n_')) {
                     select.innerHTML += `
-                    <option value="${account.id}" ${account.isDefault?"selected":''}>${cloudTypeName} - ${safeUsername}</option>
+                    <option value="${account.id}" data-cloud-type="${cloudType}" ${account.isDefault?"selected":''}>${cloudTypeName} - ${safeUsername}</option>
                 `;
                 }
             }
         });
+        if (updateSelect && typeof syncCreateTaskAccountOptions === 'function') {
+            syncCreateTaskAccountOptions();
+        }
     }
 }
 

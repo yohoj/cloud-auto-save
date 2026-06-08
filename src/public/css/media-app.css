@@ -1539,6 +1539,71 @@ html body #taskTab .form-header .delete-cloud-option input[type="checkbox"]::aft
     margin: 0 !important;
 }
 
+/* Tahoe checkbox treatment inside task forms */
+html body .modal .push-item {
+    border-radius: 18px !important;
+}
+
+html body .modal .push-item label {
+    min-height: 28px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    color: var(--tahoe-muted) !important;
+    font-weight: 650 !important;
+}
+
+html body .modal .push-item input[type="checkbox"],
+html body .modal .folder-select-header input[type="checkbox"],
+html body .modal .folder-item input[type="checkbox"],
+html body .modal .account-select-header input[type="checkbox"],
+html body .modal .account-list input[type="checkbox"] {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    position: relative !important;
+    flex: 0 0 20px !important;
+    width: 20px !important;
+    height: 20px !important;
+    min-height: 20px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 1px solid rgba(60, 60, 67, 0.22) !important;
+    border-radius: 7px !important;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.84), rgba(255, 255, 255, 0.34)),
+        rgba(255, 255, 255, 0.52) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.52) !important;
+    vertical-align: middle !important;
+    transform: none !important;
+}
+
+html body .modal .push-item input[type="checkbox"]:checked,
+html body .modal .folder-select-header input[type="checkbox"]:checked,
+html body .modal .folder-item input[type="checkbox"]:checked,
+html body .modal .account-select-header input[type="checkbox"]:checked,
+html body .modal .account-list input[type="checkbox"]:checked {
+    border-color: rgba(0, 122, 255, 0.72) !important;
+    background:
+        linear-gradient(180deg, rgba(75, 157, 255, 0.96), rgba(0, 122, 255, 0.98)) !important;
+}
+
+html body .modal .push-item input[type="checkbox"]:checked::after,
+html body .modal .folder-select-header input[type="checkbox"]:checked::after,
+html body .modal .folder-item input[type="checkbox"]:checked::after,
+html body .modal .account-select-header input[type="checkbox"]:checked::after,
+html body .modal .account-list input[type="checkbox"]:checked::after {
+    content: "" !important;
+    position: absolute !important;
+    left: 6px !important;
+    top: 3px !important;
+    width: 5px !important;
+    height: 9px !important;
+    border: solid #ffffff !important;
+    border-width: 0 2px 2px 0 !important;
+    margin: 0 !important;
+    transform: rotate(45deg) !important;
+}
+
 @media (max-width: 860px) {
     html body #taskTab .form-header {
         padding: 12px !important;
@@ -1625,4 +1690,395 @@ html body #taskTab .form-header .delete-cloud-option input[type="checkbox"]::aft
         justify-content: center !important;
         padding: 0 8px !important;
     }
+}
+
+/* Universal Tahoe checkbox reset */
+html body input[type="checkbox"] {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    position: relative !important;
+    display: inline-block !important;
+    flex: 0 0 20px !important;
+    width: 20px !important;
+    height: 20px !important;
+    min-width: 20px !important;
+    min-height: 20px !important;
+    max-width: 20px !important;
+    max-height: 20px !important;
+    margin: 0 8px 0 0 !important;
+    padding: 0 !important;
+    border: 1px solid rgba(60, 60, 67, 0.24) !important;
+    border-radius: 7px !important;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.38)),
+        rgba(255, 255, 255, 0.58) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
+    vertical-align: -4px !important;
+    transform: none !important;
+}
+
+html body input[type="checkbox"]:checked {
+    border-color: rgba(0, 122, 255, 0.78) !important;
+    background:
+        linear-gradient(180deg, rgba(74, 157, 255, 0.98), rgba(0, 122, 255, 0.98)) !important;
+}
+
+html body input[type="checkbox"]:checked::after {
+    content: "" !important;
+    position: absolute !important;
+    left: 6px !important;
+    top: 3px !important;
+    width: 5px !important;
+    height: 9px !important;
+    border: solid #ffffff !important;
+    border-width: 0 2px 2px 0 !important;
+    margin: 0 !important;
+    transform: rotate(45deg) !important;
+}
+
+[data-theme="dark"] input[type="checkbox"] {
+    border-color: rgba(235, 245, 255, 0.22) !important;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04)),
+        rgba(255, 255, 255, 0.08) !important;
+}
+
+html body .push-item label,
+html body .checkbox-label,
+html body .proxy-service-item,
+html body .folder-select-header label,
+html body .account-select-header label,
+html body .radio-label {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+}
+
+html body .toggle-switch input[type="checkbox"] {
+    position: absolute !important;
+    opacity: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}
+
+html body input.secret-config-field {
+    -webkit-text-security: disc;
+    text-security: disc;
+}
+
+/* Cohesive dark Tahoe pass */
+html[data-theme="dark"] {
+    --accent: #5eb1ff;
+    --accent-strong: #9fd0ff;
+    --accent-soft: rgba(94, 177, 255, 0.16);
+    --primary-action: #0a84ff;
+    --primary-action-strong: #55aaff;
+    --primary-action-soft: rgba(10, 132, 255, 0.18);
+    --page-bg: #070a10;
+    --surface: rgba(15, 18, 25, 0.74);
+    --surface-strong: rgba(24, 29, 39, 0.9);
+    --surface-subtle: rgba(18, 23, 32, 0.82);
+    --text-strong: #f6f8ff;
+    --text-muted: rgba(220, 229, 245, 0.68);
+    --line: rgba(232, 240, 255, 0.11);
+    --ring: rgba(10, 132, 255, 0.28);
+    --elevation: 0 30px 90px rgba(0, 0, 0, 0.48);
+    --elevation-soft: 0 16px 42px rgba(0, 0, 0, 0.34);
+    --tahoe-blue: #0a84ff;
+    --tahoe-blue-strong: #5eb1ff;
+    --tahoe-red: #ff5f57;
+    --tahoe-orange: #ffb340;
+    --tahoe-green: #30d158;
+    --tahoe-ink: #f6f8ff;
+    --tahoe-muted: rgba(220, 229, 245, 0.68);
+    --tahoe-hairline: rgba(255, 255, 255, 0.16);
+    --tahoe-line: rgba(232, 240, 255, 0.11);
+    --tahoe-glass: rgba(15, 18, 25, 0.72);
+    --tahoe-glass-strong: rgba(24, 29, 39, 0.88);
+    --tahoe-fill: rgba(12, 16, 23, 0.86);
+    --tahoe-shadow: 0 32px 90px rgba(0, 0, 0, 0.5);
+    --tahoe-shadow-soft: 0 16px 44px rgba(0, 0, 0, 0.34);
+    background:
+        radial-gradient(circle at 13% 8%, rgba(10, 132, 255, 0.26), transparent 30rem),
+        radial-gradient(circle at 82% 14%, rgba(48, 209, 88, 0.11), transparent 24rem),
+        radial-gradient(circle at 65% 96%, rgba(255, 179, 64, 0.08), transparent 28rem),
+        linear-gradient(135deg, #070a10 0%, #0b1018 46%, #07110f 100%) !important;
+}
+
+html[data-theme="dark"] body {
+    background:
+        linear-gradient(126deg, rgba(255, 255, 255, 0.055), transparent 32%),
+        linear-gradient(180deg, rgba(10, 132, 255, 0.06), transparent 42%),
+        transparent !important;
+}
+
+html[data-theme="dark"] body::before {
+    background:
+        linear-gradient(115deg, rgba(255, 255, 255, 0.08), transparent 35%),
+        repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 78px) !important;
+    opacity: 0.58;
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.62), transparent 76%);
+}
+
+html[data-theme="dark"] .header,
+html[data-theme="dark"] .tabs,
+html[data-theme="dark"] .form-header,
+html[data-theme="dark"] .table-container,
+html[data-theme="dark"] #settingsForm,
+html[data-theme="dark"] #mediaForm {
+    border-color: rgba(255, 255, 255, 0.14) !important;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.105), rgba(255, 255, 255, 0.035)),
+        linear-gradient(180deg, rgba(10, 132, 255, 0.045), rgba(48, 209, 88, 0.025)),
+        rgba(16, 20, 28, 0.72) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        0 18px 48px rgba(0, 0, 0, 0.34) !important;
+}
+
+html[data-theme="dark"] .header {
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 18px 46px rgba(0, 0, 0, 0.28),
+        0 0 0 1px rgba(10, 132, 255, 0.04) !important;
+}
+
+html[data-theme="dark"] .brand-mark {
+    border-color: rgba(255, 255, 255, 0.22) !important;
+    background:
+        linear-gradient(150deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.06)),
+        rgba(17, 22, 31, 0.92) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.16),
+        0 14px 28px rgba(0, 0, 0, 0.34) !important;
+}
+
+html[data-theme="dark"] .header-meta a {
+    border-color: rgba(255, 255, 255, 0.14) !important;
+    background: rgba(255, 255, 255, 0.055) !important;
+    color: rgba(234, 241, 255, 0.78) !important;
+}
+
+html[data-theme="dark"] .tab {
+    color: rgba(220, 229, 245, 0.58) !important;
+}
+
+html[data-theme="dark"] .tab.active {
+    border-color: rgba(94, 177, 255, 0.28) !important;
+    color: #ffffff !important;
+    background:
+        linear-gradient(145deg, rgba(10, 132, 255, 0.24), rgba(255, 255, 255, 0.06)),
+        rgba(28, 35, 47, 0.82) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 12px 26px rgba(0, 0, 0, 0.22) !important;
+}
+
+html[data-theme="dark"] .tab:not(.active):hover {
+    background: rgba(255, 255, 255, 0.07) !important;
+}
+
+html[data-theme="dark"] .operation-group .button-group > button,
+html[data-theme="dark"] button.btn-primary,
+html[data-theme="dark"] .btn-primary,
+html[data-theme="dark"] .search-input .btn-icon {
+    border: 1px solid rgba(125, 190, 255, 0.38) !important;
+    color: #ffffff !important;
+    background:
+        linear-gradient(180deg, rgba(55, 160, 255, 0.96), rgba(10, 132, 255, 0.94)) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        0 8px 18px rgba(10, 132, 255, 0.22) !important;
+}
+
+html[data-theme="dark"] .btn-warning {
+    border-color: rgba(255, 179, 64, 0.34) !important;
+    background:
+        linear-gradient(180deg, rgba(255, 179, 64, 0.95), rgba(204, 126, 20, 0.92)) !important;
+    box-shadow: 0 8px 18px rgba(255, 159, 10, 0.16) !important;
+}
+
+html[data-theme="dark"] .btn-danger {
+    border-color: rgba(255, 95, 87, 0.36) !important;
+    background:
+        linear-gradient(180deg, rgba(255, 95, 87, 0.98), rgba(223, 58, 52, 0.94)) !important;
+    box-shadow: 0 8px 18px rgba(255, 69, 58, 0.18) !important;
+}
+
+html[data-theme="dark"] .btn-default,
+html[data-theme="dark"] .dropdown-toggle,
+html[data-theme="dark"] .toggle-help-text,
+html[data-theme="dark"] .btn-small {
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    color: rgba(241, 246, 255, 0.9) !important;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.105), rgba(255, 255, 255, 0.045)) !important;
+}
+
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] .search-input,
+html[data-theme="dark"] .filter-dropdown select,
+html[data-theme="dark"] .delete-cloud-option,
+html[data-theme="dark"] .push-item,
+html[data-theme="dark"] .proxy-settings,
+html[data-theme="dark"] .share-folders-list,
+html[data-theme="dark"] .account-list {
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    color: #f6f8ff !important;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.035)),
+        rgba(9, 13, 20, 0.46) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.075),
+        0 1px 0 rgba(0, 0, 0, 0.14) !important;
+}
+
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder {
+    color: rgba(220, 229, 245, 0.42) !important;
+}
+
+html[data-theme="dark"] input:focus,
+html[data-theme="dark"] select:focus,
+html[data-theme="dark"] textarea:focus {
+    border-color: rgba(94, 177, 255, 0.58) !important;
+    box-shadow:
+        0 0 0 4px rgba(10, 132, 255, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+}
+
+html[data-theme="dark"] #taskTable tr,
+html[data-theme="dark"] #accountTable tr {
+    border-color: rgba(255, 255, 255, 0.13) !important;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.035)),
+        linear-gradient(180deg, rgba(10, 132, 255, 0.035), rgba(48, 209, 88, 0.018)),
+        rgba(17, 22, 31, 0.86) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        0 14px 34px rgba(0, 0, 0, 0.26) !important;
+}
+
+html[data-theme="dark"] #taskTable tr:hover,
+html[data-theme="dark"] #accountTable tr:hover {
+    border-color: rgba(94, 177, 255, 0.22) !important;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.045)),
+        rgba(20, 27, 39, 0.9) !important;
+}
+
+html[data-theme="dark"] #taskTable td,
+html[data-theme="dark"] #accountTable td {
+    color: rgba(246, 248, 255, 0.92) !important;
+    border-bottom-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html[data-theme="dark"] #taskTable td::before,
+html[data-theme="dark"] #accountTable td::before,
+html[data-theme="dark"] label,
+html[data-theme="dark"] .form-text,
+html[data-theme="dark"] .progress-ring__text {
+    color: rgba(220, 229, 245, 0.58) !important;
+}
+
+html[data-theme="dark"] .modal {
+    background: rgba(4, 7, 12, 0.54) !important;
+}
+
+html[data-theme="dark"] .modal-content,
+html[data-theme="dark"] .dropdown-content,
+html[data-theme="dark"] .regex-tooltip,
+html[data-theme="dark"] .logs-modal {
+    border-color: rgba(255, 255, 255, 0.14) !important;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.045)),
+        rgba(15, 19, 27, 0.92) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 30px 90px rgba(0, 0, 0, 0.52) !important;
+}
+
+html[data-theme="dark"] .floating-btn-group {
+    gap: 12px !important;
+}
+
+html[data-theme="dark"] .floating-btn {
+    width: 46px !important;
+    height: 46px !important;
+    border-color: rgba(255, 255, 255, 0.14) !important;
+    border-radius: 16px !important;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.045)),
+        rgba(16, 21, 30, 0.86) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 12px 28px rgba(0, 0, 0, 0.34) !important;
+}
+
+html[data-theme="dark"] .floating-btn:hover {
+    border-color: rgba(94, 177, 255, 0.28) !important;
+    background:
+        linear-gradient(145deg, rgba(10, 132, 255, 0.22), rgba(255, 255, 255, 0.06)),
+        rgba(18, 25, 36, 0.92) !important;
+    transform: translateY(-2px);
+}
+
+html[data-theme="dark"] .floating-btn img {
+    filter: brightness(0) invert(1) opacity(0.72) !important;
+}
+
+html[data-theme="dark"] .floating-btn[title="CloudSaver"] img {
+    filter: none !important;
+    opacity: 0.88;
+}
+
+html[data-theme="dark"] .theme-toggle-btn {
+    border-color: rgba(255, 255, 255, 0.16) !important;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04)),
+        rgba(16, 21, 30, 0.88) !important;
+}
+
+html[data-theme="dark"] .theme-dropdown {
+    border-color: rgba(255, 255, 255, 0.16) !important;
+    color: #eef4ff !important;
+    -webkit-text-fill-color: #eef4ff !important;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.055)),
+        rgba(17, 22, 31, 0.96) !important;
+}
+
+html[data-theme="dark"] .theme-dropdown .theme-option {
+    color: #eef4ff !important;
+    -webkit-text-fill-color: #eef4ff !important;
+}
+
+html[data-theme="dark"] .theme-dropdown .theme-option .theme-icon {
+    background-color: #eef4ff !important;
+}
+
+html[data-theme="dark"] .theme-dropdown .theme-option:hover {
+    background: rgba(10, 132, 255, 0.2) !important;
+}
+
+html[data-theme="dark"] input[type="checkbox"] {
+    border-color: rgba(255, 255, 255, 0.18) !important;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.04)),
+        rgba(8, 12, 18, 0.5) !important;
+}
+
+html[data-theme="dark"] input[type="checkbox"]:checked {
+    border-color: rgba(94, 177, 255, 0.68) !important;
+    background:
+        linear-gradient(180deg, rgba(55, 160, 255, 0.98), rgba(10, 132, 255, 0.98)) !important;
 }
