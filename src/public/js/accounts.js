@@ -30,6 +30,8 @@ async function fetchAccounts(updateSelect = false) {
             const safeLocalStrmPrefixArg = escapeJsString(account.localStrmPrefix || '');
             const safeEmbyPathReplace = escapeHtml(account.embyPathReplace || '');
             const safeEmbyPathReplaceArg = escapeJsString(account.embyPathReplace || '');
+            const personalCapacity = formatCapacityInfo(account.capacity?.cloudCapacityInfo);
+            const familyCapacity = formatCapacityInfo(account.capacity?.familyCapacityInfo);
             tbody.innerHTML += `
                 <tr>
                     <td><span class="default-star" onclick="setDefaultAccount(${account.id})" title="设为默认账号">
@@ -41,8 +43,8 @@ async function fetchAccounts(updateSelect = false) {
                     <td data-label='账户名'>${safeUsername}</td>
                     <td data-label='网盘类型'>${cloudTypeName}</td>
                     <td data-label='别名' onclick="updateAlias(${account.id}, '${safeAliasArg}')">${safeAlias}</td>
-                    <td data-label='个人容量'>${formatBytes(account.capacity.cloudCapacityInfo.usedSize) + '/' + formatBytes(account.capacity.cloudCapacityInfo.totalSize)}</td>
-                    <td data-label='家庭容量'>${formatBytes(account.capacity.familyCapacityInfo.usedSize) + '/' + formatBytes(account.capacity.familyCapacityInfo.totalSize)}</td>
+                    <td data-label='个人容量'>${personalCapacity}</td>
+                    <td data-label='家庭容量'>${familyCapacity}</td>
                     <td class='strm-prefix' data-label='媒体目录' style="cursor: pointer;" onclick="updateCloudStrmPrefix(${account.id}, '${safeCloudStrmPrefixArg}')">${safeCloudStrmPrefix}</td>
                     <td class='strm-prefix' data-label='本地目录' style="cursor: pointer;" onclick="updateLocalStrmPrefix(${account.id}, '${safeLocalStrmPrefixArg}')">${safeLocalStrmPrefix}</td>
                     <td class='emby-path-replace' data-label='Emby路径替换' style="cursor: pointer;" onclick="updateEmbyPathReplace(${account.id}, '${safeEmbyPathReplaceArg}')">${safeEmbyPathReplace}</td>
@@ -238,6 +240,18 @@ function formatBytes(bytes) {
     const value = bytes / Math.pow(base, exponent);
     
     return value.toFixed(exponent > 0 ? 2 : 0) + units[exponent];
+}
+function formatCapacityInfo(capacityInfo) {
+    if (!capacityInfo) return '';
+    const usedSize = capacityInfo.usedSize;
+    const totalSize = capacityInfo.totalSize;
+    if (usedSize === null || usedSize === undefined || usedSize === '' || totalSize === null || totalSize === undefined || totalSize === '') {
+        return '';
+    }
+    const usedBytes = Number(usedSize);
+    const totalBytes = Number(totalSize);
+    if (!Number.isFinite(usedBytes) || !Number.isFinite(totalBytes)) return '';
+    return formatBytes(usedBytes) + '/' + formatBytes(totalBytes);
 }
 async function clearRecycleBin() {
     if (!confirm('确定要清空所有账号的回收站吗？')) {

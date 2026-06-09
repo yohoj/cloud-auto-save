@@ -86,11 +86,41 @@ class QuarkService {
     }
 
     async getUserSizeInfo() {
+        const response = await this.request('/1/clouddrive/member', {
+            method: 'GET',
+            searchParams: {
+                fetch_subscribe: true,
+                fetch_identity: true
+            }
+        });
+        if (!response) return null;
+        if (response.status && response.status !== 200) {
+            return {
+                res_code: response.status,
+                res_msg: response.message || '获取夸克容量信息失败'
+            };
+        }
+
+        const data = response.data || {};
+        const usedSize = this.parseCapacitySize(data.use_capacity ?? data.used_capacity ?? data.usedSize);
+        const totalSize = this.parseCapacitySize(data.total_capacity ?? data.totalCapacity ?? data.total_size);
+        if (usedSize === null || totalSize === null) {
+            return {
+                res_code: -1,
+                res_msg: '夸克接口未返回容量信息'
+            };
+        }
+
         return {
             res_code: 0,
-            cloudCapacityInfo: { usedSize: 0, totalSize: 0 },
-            familyCapacityInfo: { usedSize: 0, totalSize: 0 }
+            cloudCapacityInfo: { usedSize, totalSize }
         };
+    }
+
+    parseCapacitySize(value) {
+        if (value === null || value === undefined || value === '') return null;
+        const size = Number(value);
+        return Number.isFinite(size) ? size : null;
     }
 
     async getShareInfo(pwdId, passcode = '') {

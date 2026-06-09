@@ -185,16 +185,20 @@ AppDataSource.initialize().then(async () => {
             account.cloudType = account.cloudType || (account.username.startsWith('q_') ? 'quark' : 'cloud189');
             
             account.capacity = {
-                cloudCapacityInfo: {usedSize:0,totalSize:0},
-                familyCapacityInfo: {usedSize:0,totalSize:0}
+                cloudCapacityInfo: null,
+                familyCapacityInfo: null
             }
             // n_ 开头的账号用于占位/通知，不参与网盘容量查询
             if (!account.username.startsWith('n_')) {
                 const cloud189 = CloudUtils.getService(account);
                 const capacity = await cloud189.getUserSizeInfo()
                 if (capacity && capacity.res_code == 0) {
-                    account.capacity.cloudCapacityInfo = capacity.cloudCapacityInfo;
-                    account.capacity.familyCapacityInfo = capacity.familyCapacityInfo;
+                    if (capacity.cloudCapacityInfo) {
+                        account.capacity.cloudCapacityInfo = capacity.cloudCapacityInfo;
+                    }
+                    if (capacity.familyCapacityInfo) {
+                        account.capacity.familyCapacityInfo = capacity.familyCapacityInfo;
+                    }
                 }
             }
             account.original_username = account.username;
