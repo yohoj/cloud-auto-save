@@ -278,20 +278,21 @@ class TaskService {
     async deleteTask(taskId, deleteCloud) {
         const task = await this.getTaskById(taskId);
         if (!task) throw new Error('任务不存在');
-        const folderName = task.realFolderName.substring(task.realFolderName.indexOf('/') + 1);
+        const strmService = new StrmService();
+        const strmPath = strmService.getTaskLocalRelativePath(task);
         if (!task.enableSystemProxy && deleteCloud) {
             const account = await this.accountRepo.findOneBy({ id: task.accountId });
             if (!account) throw new Error('账号不存在');
             const cloud189 = CloudUtils.getService(account);
             await this.deleteCloudFile(cloud189, await this.getRootFolder(task), 1);
             // 删除strm
-            new StrmService().deleteDir(path.join(task.account.localStrmPrefix, folderName))
+            strmService.deleteDir(strmPath)
             // 刷新Alist缓存
             await this.refreshAlistCache(task, true)
         }
         if (task.enableSystemProxy) {
             // 删除strm
-            new StrmService().deleteDir(path.join(task.account.localStrmPrefix, folderName))
+            strmService.deleteDir(strmPath)
         }
         // 删除定时任务
         if (task.enableCron) {
@@ -654,9 +655,8 @@ class TaskService {
         // 如果原realFolderName和现realFolderName不一致 则需要删除原strm
         if (updates.realFolderName && updates.realFolderName !== task.realFolderName && ConfigService.getConfigValue('strm.enable')) {
             // 删除原strm
-            // 从realFolderName中获取文件夹名称
-            const folderName = task.realFolderName.substring(task.realFolderName.indexOf('/') + 1);
-            new StrmService().deleteDir(path.join(task.account.localStrmPrefix, folderName))
+            const strmService = new StrmService();
+            strmService.deleteDir(strmService.getTaskLocalRelativePath(task))
         }
         // 只允许更新特定字段
         const allowedFields = ['resourceName', 'realFolderId', 'currentEpisodes', 'totalEpisodes', 'status','realFolderName', 'shareFolderName', 'shareFolderId', 'matchPattern','matchOperator','matchValue','remark', 'enableCron', 'cronExpression', 'enableTaskScraper'];
@@ -1385,9 +1385,8 @@ class TaskService {
             throw new Error('任务不存在')
         }
         const strmService = new StrmService()
-        const folderName = task.realFolderName.substring(task.realFolderName.indexOf('/') + 1);
         let strmList = []
-        strmList = files.map(file => path.join(folderName, file.name));
+        strmList = files.map(file => path.join(strmService.getTaskLocalRelativePath(task), file.name));
         // 判断是否启用了系统代理
         if (task.enableSystemProxy) {
             // 代理文件
@@ -1399,7 +1398,7 @@ class TaskService {
         }
         for (const strm of strmList) {
             // 删除strm文件
-            await strmService.delete(path.join(task.account.localStrmPrefix, strm));
+            await strmService.delete(strm);
         }
     }
 
@@ -1407,22 +1406,21 @@ class TaskService {
     async refreshAlistCache(task, firstExecution = false) {
         try{
             if (ConfigService.getConfigValue('alist.enable') && !task.enableSystemProxy && task.account.cloudStrmPrefix) {
-                const pathParts = task.realFolderName.split('/');
-                let alistPath = pathParts.slice(1).join('/');
-                let currentPath = task.account.cloudStrmPrefix.includes('/d/') 
-                    ? task.account.cloudStrmPrefix.split('/d/')[1] 
-                    : path.basename(task.account.cloudStrmPrefix);
+                const strmService = new StrmService();
+                const taskRelativePath = strmService.getTaskRelativePath(task);
+                const resourceName = (task.resourceName || '').replace('(根)', '').trim();
+                const relativeParts = taskRelativePath.split('/').filter(Boolean);
                 let refreshPath = "";
                 // 首次执行任务需要刷新所有目录缓存
                 if (firstExecution) {
-                    alistPath = pathParts.slice(1, -1).join('/');
-                    const taskName = task.resourceName;
-                    // 替换alistPath中的taskName为空, 然后去掉最后一个/
-                    alistPath = alistPath.replace(taskName, '').replace(/\/$/, '');
-                    refreshPath = path.join(currentPath, alistPath);
+                    const resourceIndex = relativeParts.indexOf(resourceName);
+                    const parentParts = resourceIndex >= 0
+                        ? relativeParts.slice(0, resourceIndex)
+                        : relativeParts.slice(0, -1);
+                    refreshPath = strmService.getAccountAlistPath(task.account, parentParts.join('/'));
                 } else {
                     // 非首次只刷新当前目录
-                    refreshPath = path.join(currentPath, alistPath);
+                    refreshPath = strmService.getAccountAlistPath(task.account, taskRelativePath);
                 }
                 logTaskEvent(`刷新alist目录缓存: ${refreshPath}`);
                 await alistService.listFiles(refreshPath);

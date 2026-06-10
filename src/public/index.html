@@ -135,23 +135,26 @@
                             <div class="form-group">
                                 <label for="alias">媒体目录(可选)</label>
                                 <input type="text" id="cloudStrmPrefix" placeholder="http://alist:5244/d/云盘">
-                                <small class="form-text">STRM文件内容前缀, 详情查看<a
-                                        href='https://github.com/1307super/cloud189-auto-save/wiki/3.STRM%E4%B8%8EEmby'
-                                        target="_blank">wiki</a></small>
+                                <small class="form-text">STRM文件内容前缀
+                                    <span class="account-path-help" tabindex="0"
+                                        data-tooltip="填播放地址根，例如 http://127.0.0.1:5244/d/云盘。任务目录为 云盘/剧集/北上(2025)/Season 01 时，会裁掉 云盘，最终STRM内容为 http://127.0.0.1:5244/d/云盘/剧集/北上(2025)/Season 01/S01E01.mkv。">?</span>
+                                </small>
                             </div>
                             <div class="form-group">
                                 <label for="alias">本地目录(可选)</label>
                                 <input type="text" id="localStrmPrefix" placeholder="/云盘1">
-                                <small class="form-text">保存STRM文件的目录前缀, 详情查看<a
-                                        href='https://github.com/1307super/cloud189-auto-save/wiki/3.STRM%E4%B8%8EEmby'
-                                        target="_blank">wiki</a></small>
+                                <small class="form-text">保存STRM文件的目录前缀
+                                    <span class="account-path-help" tabindex="0"
+                                        data-tooltip="填STRM输出根，例如 /云盘1。任务目录为 云盘/剧集/北上(2025)/Season 01 时，最终文件为 /home/strm/云盘1/剧集/北上(2025)/Season 01/S01E01.strm。">?</span>
+                                </small>
                             </div>
                             <div class="form-group">
                                 <label for="alias">Emby替换路径(可选)</label>
                                 <input type="text" id="embyPathReplace" placeholder="/影视剧:/cloud/云盘">
-                                <small class="form-text">通知Emby扫库的替换逻辑, 详情查看<a
-                                        href='https://github.com/1307super/cloud189-auto-save/wiki/3.STRM%E4%B8%8EEmby'
-                                        target="_blank">wiki</a></small>
+                                <small class="form-text">通知Emby扫库的替换逻辑
+                                    <span class="account-path-help" tabindex="0"
+                                        data-tooltip="通知 Emby 扫库前替换路径，格式为 源路径:目标路径，多条规则用分号分隔。例如 /home/strm/云盘1:/media/云盘1。">?</span>
+                                </small>
                             </div>
                         </div>
                         <div class="form-actions">
@@ -633,17 +636,18 @@
                             <div class="help-text-container">
                                 <button type="button" class="toggle-help-text"
                                     onclick="toggleHelpText(this)">显示帮助</button>
-                                <small class="form-text">例如:
-                                    <br />如果播放地址是<span
-                                        style="background-color: #f0f0f0;">http://127.0.0.1:5244/d/云盘/剧集/北上(2025)/Season
-                                        01/S01E01.mkv</span>
-                                    <br />那么你的前缀就应该写 <span
-                                        style="background-color: #f0f0f0;">http://127.0.0.1:5244/d/云盘</span>
-                                    <br />完整逻辑为
-                                    <br />生成strm路径:
-                                    <br />账号本地目录 + 任务更新目录(排除根目录) + 文件名.strm
-                                    <br />strm内容(即播放地址)
-                                    <br />账号媒体目录 + 任务更新目录(排除根目录) + 文件名
+                                <small class="form-text">示例:
+                                    <br />账号媒体目录配置为 <span class="path-example">http://127.0.0.1:5244/d/云盘</span>
+                                    <br />账号本地目录配置为 <span class="path-example">/云盘1</span>
+                                    <br />任务更新目录为 <span class="path-example">云盘/剧集/北上(2025)/Season 01</span>
+                                    <br />媒体文件名为 <span class="path-example">S01E01.mkv</span>
+                                    <br />系统会从任务更新目录中裁掉媒体目录对应的根 <span class="path-example">云盘</span>
+                                    <br />得到相对路径 <span class="path-example">剧集/北上(2025)/Season 01</span>
+                                    <br />最终生成的STRM文件:
+                                    <br /><span class="path-example">/home/strm/云盘1/剧集/北上(2025)/Season 01/S01E01.strm</span>
+                                    <br />最终STRM文件内容:
+                                    <br /><span class="path-example">http://127.0.0.1:5244/d/云盘/剧集/北上(2025)/Season 01/S01E01.mkv</span>
+                                    <br />生成全部STRM时，会从 Alist 目录 <span class="path-example">云盘</span> 开始遍历，并按同样规则写入账号本地目录。
                                 </small>
                             </div>
                         </div>
@@ -1014,9 +1018,9 @@
                 <div class="help-text-container">
                     <button type="button" class="toggle-help-text" onclick="toggleHelpText(this)">显示帮助</button>
                     <small class="form-text">
-                        <p>此功能依赖Alist，将根据选中账号的媒体目录最后一个/后的目录名称递归生成STRM文件。</p>
+                        <p>此功能依赖Alist，将从选中账号的媒体目录开始递归生成STRM文件。</p>
                         <p style="margin-top: 5px; font-size: 0.9em;">例如：配置项为
-                            /我的云盘/媒体库，则会以"媒体库"为根目录遍历alist对应"媒体库"目录生成STRM文件。</p>
+                            http://alist:5244/d/我的云盘/媒体库，则会遍历Alist中的"我的云盘/媒体库"，并在本地目录下生成相同的相对目录结构。</p>
                     </small>
                 </div>
             </div>

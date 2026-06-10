@@ -66,7 +66,7 @@ async function fetchAccounts(updateSelect = false) {
 }
 
 async function deleteAccount(id) {
-    if (!confirm('确定要删除这个账号吗？')) return;
+    if (!confirm('确定要删除这个账号吗？该账号关联的任务和常用目录也会一起删除，但不会删除网盘文件。')) return;
     loading.show()
     const response = await fetch(`/api/accounts/${id}`, {
         method: 'DELETE'

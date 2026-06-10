@@ -89,6 +89,20 @@
     margin-top: 4px;
 }
 
+.path-example {
+    display: inline-block;
+    max-width: 100%;
+    padding: 1px 5px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: rgba(127, 127, 127, 0.12);
+    color: var(--text-color);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.92em;
+    overflow-wrap: anywhere;
+    vertical-align: middle;
+}
+
 .push-settings {
     display: flex;
     flex-direction: column;
@@ -475,6 +489,76 @@
     font-size: 12px;
     margin-left: 5px;
     cursor: pointer;
+}
+
+.account-path-help {
+    display: inline-block;
+    position: relative;
+    width: 16px;
+    height: 16px;
+    margin-left: 5px;
+    border-radius: 50%;
+    background-color: #666;
+    color: white;
+    cursor: help;
+    font-size: 12px;
+    line-height: 16px;
+    text-align: center;
+    vertical-align: 1px;
+}
+
+.account-path-help::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    z-index: 10000;
+    width: max-content;
+    max-width: min(360px, 82vw);
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--background-color);
+    color: var(--text-color);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
+    font-size: 12px;
+    line-height: 1.5;
+    text-align: left;
+    white-space: normal;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-50%) translateY(4px);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.account-path-help::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 3px);
+    z-index: 10001;
+    width: 8px;
+    height: 8px;
+    border-right: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+    background: var(--background-color);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-50%) rotate(45deg);
+    transition: opacity 0.16s ease;
+}
+
+.account-path-help:hover::after,
+.account-path-help:focus::after,
+.account-path-help:hover::before,
+.account-path-help:focus::before {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.account-path-help:hover::before,
+.account-path-help:focus::before {
+    transform: translateX(-50%) rotate(45deg);
 }
 
 .regex-tooltip {

@@ -278,9 +278,24 @@ AppDataSource.initialize().then(async () => {
 
     app.delete('/api/accounts/:id', async (req, res) => {
         try {
-            const account = await accountRepo.findOneBy({ id: parseInt(req.params.id) });
+            const accountId = parseInt(req.params.id);
+            const account = await accountRepo.findOneBy({ id: accountId });
             if (!account) throw new Error('账号不存在');
-            await accountRepo.remove(account);
+            const tasks = await taskRepo.find({
+                where: { accountId },
+                select: {
+                    id: true
+                }
+            });
+            await AppDataSource.transaction(async manager => {
+                await manager.getRepository(CommonFolder).delete({ accountId });
+                await manager.getRepository(Task).delete({ accountId });
+                await manager.getRepository(Account).delete({ id: accountId });
+            });
+            for (const task of tasks) {
+                SchedulerService.removeTaskJob(task.id);
+            }
+            CloudUtils.removeInstance(account.username);
             res.json({ success: true });
         } catch (error) {
             res.json({ success: false, error: error.message });
@@ -583,8 +598,6 @@ AppDataSource.initialize().then(async () => {
         if (!task) {
             throw new Error('任务不存在');
         }
-        // 从realFolderName中获取文件夹名称 删除对应的本地文件
-        const folderName = task.realFolderName.substring(task.realFolderName.indexOf('/') + 1);
         const strmService = new StrmService();
         const strmEnabled = ConfigService.getConfigValue('strm.enable') && task.account.localStrmPrefix
         if (strmEnabled && task.enableSystemProxy){
@@ -606,9 +619,9 @@ AppDataSource.initialize().then(async () => {
                 result.push(`文件${file.destFileName} ${renameResult.res_msg}`)
             }else{
                 if (strmEnabled){
-                    // 从realFolderName中获取文件夹名称 删除对应的本地文件
-                    const oldFile = path.join(folderName, file.oldName);
-                    await strmService.delete(path.join(task.account.localStrmPrefix, oldFile))
+                    // 删除对应的本地STRM文件
+                    const oldFile = path.join(strmService.getTaskLocalRelativePath(task), file.oldName);
+                    await strmService.delete(oldFile)
                 }
                 successFiles.push({id: file.fileId, name: file.destFileName})
             }

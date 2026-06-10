@@ -19,6 +19,11 @@ class Cloud189Service {
     }
 
     constructor(account) {
+        this.account = account;
+        this.client = this._createClient(account, ProxyUtil.getProxy('cloud189'));
+    }
+
+    _createClient(account, proxy) {
         const _options = {
             username: account.username,
             password: account.password,
@@ -28,16 +33,24 @@ class Cloud189Service {
             _options.ssonCookie = account.cookies
             _options.password = null
         }
-        _options.proxy = ProxyUtil.getProxy('cloud189')
-        this.client = new CloudClient(_options);
+        _options.proxy = proxy
+        return new CloudClient(_options);
     }
 
     // 重新给所有实例设置代理
     static setProxy() {
         const proxyUrl = ProxyUtil.getProxy('cloud189')
         this.instances.forEach(instance => {
-            instance.client.setProxy(proxyUrl);
+            instance.setProxy(proxyUrl);
         });
+    }
+
+    setProxy(proxyUrl) {
+        if (typeof this.client?.setProxy === 'function') {
+            this.client.setProxy(proxyUrl);
+            return;
+        }
+        this.client = this._createClient(this.account, proxyUrl);
     }
 
     // 封装统一请求

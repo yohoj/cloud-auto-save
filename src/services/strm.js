@@ -46,6 +46,74 @@ class StrmService {
         }
     }
 
+    _normalizePath(value = '') {
+        return String(value)
+            .replace(/\\/g, '/')
+            .replace(/\/+/g, '/')
+            .replace(/^\/+|\/+$/g, '');
+    }
+
+    _dropFirstPathSegment(value = '') {
+        const parts = this._normalizePath(value).split('/').filter(Boolean);
+        return parts.slice(1).join('/');
+    }
+
+    _getRelativePath(fullPath, rootPath = '') {
+        const normalizedFullPath = this._normalizePath(fullPath);
+        const normalizedRootPath = this._normalizePath(rootPath);
+        if (!normalizedFullPath) return '';
+        if (!normalizedRootPath) return this._dropFirstPathSegment(normalizedFullPath);
+        if (normalizedFullPath === normalizedRootPath) return '';
+        if (normalizedFullPath.startsWith(`${normalizedRootPath}/`)) {
+            return normalizedFullPath.slice(normalizedRootPath.length + 1);
+        }
+        return this._dropFirstPathSegment(normalizedFullPath);
+    }
+
+    _joinPath(...parts) {
+        return this._normalizePath(parts.filter(part => part !== undefined && part !== null && part !== '').join('/'));
+    }
+
+    getAccountCloudRootPath(account) {
+        const cloudStrmPrefix = account?.cloudStrmPrefix || '';
+        if (!cloudStrmPrefix) return '';
+
+        try {
+            const prefixUrl = new URL(cloudStrmPrefix);
+            const pathname = decodeURIComponent(prefixUrl.pathname || '');
+            const dIndex = pathname.indexOf('/d/');
+            return this._normalizePath(dIndex >= 0 ? pathname.slice(dIndex + 3) : pathname);
+        } catch (error) {
+            const pathWithoutQuery = cloudStrmPrefix.split(/[?#]/)[0];
+            const dIndex = pathWithoutQuery.indexOf('/d/');
+            return this._normalizePath(dIndex >= 0 ? pathWithoutQuery.slice(dIndex + 3) : pathWithoutQuery);
+        }
+    }
+
+    getTaskRelativePath(task) {
+        return this._getRelativePath(task?.realFolderName || '', this.getAccountCloudRootPath(task?.account));
+    }
+
+    getTaskLocalRelativePath(task) {
+        return path.join(task.account.localStrmPrefix || '', this.getTaskRelativePath(task));
+    }
+
+    getTaskStrmDir(task) {
+        return path.join(this.baseDir, this.getTaskLocalRelativePath(task));
+    }
+
+    getAccountLocalRootPath(account) {
+        return path.join(account.localStrmPrefix || '');
+    }
+
+    getAccountAlistPath(account, relativePath = '') {
+        return this._joinPath(this.getAccountCloudRootPath(account), relativePath);
+    }
+
+    _buildStrmContent(account, relativePath, fileName) {
+        return this._joinUrl(account.cloudStrmPrefix || '', this._joinPath(relativePath, fileName));
+    }
+
     /**
      * 生成 STRM 文件
      * @param {Array} files - 文件列表，每个文件对象需包含 name 属性
@@ -66,14 +134,12 @@ class StrmService {
         try {
             // mediaSuffixs转为小写
             const mediaSuffixs = ConfigService.getConfigValue('task.mediaSuffix').split(';').map(suffix => suffix.toLowerCase())
-            let taskName = task.realFolderName.substring(task.realFolderName.indexOf('/') + 1)
-            // 去掉头尾/
-            taskName = taskName.replace(/^\/|\/$/g, '');
+            const taskRelativePath = this.getTaskRelativePath(task);
             // 构建完整的目标目录路径
-            const targetDir = path.join(this.baseDir,task.account.localStrmPrefix, taskName);
+            const targetDir = this.getTaskStrmDir(task);
             if (compare) {
                 // 查询出所有目录下的.strm文件
-                const strmFiles = await this.listStrmFiles(path.join(task.account.localStrmPrefix, taskName));
+                const strmFiles = await this.listStrmFiles(this.getTaskLocalRelativePath(task));
                 // 将不在strmFiles中的文件删除
                 for (const file of strmFiles) {
                     if (!files.some(f => path.parse(f.name).name === path.parse(file.name).name)) {
@@ -110,8 +176,7 @@ class StrmService {
                     }
 
                     // 生成STRM文件内容
-                    let content;
-                    content = this._joinUrl(this._joinUrl(task.account.cloudStrmPrefix, taskName), fileName);
+                    const content = this._buildStrmContent(task.account, taskRelativePath, fileName);
                     await fs.writeFile(strmPath, content, 'utf8');
                     // 设置文件权限
                     if (process.getuid && process.getuid() === 0) {
@@ -153,9 +218,13 @@ class StrmService {
         const messages = [];
         for(const account of accounts) {
             try {
-                let startPath = account.cloudStrmPrefix.includes('/d/') 
-                ? account.cloudStrmPrefix.split('/d/')[1] 
-                : path.basename(account.cloudStrmPrefix);
+                const startPath = this.getAccountCloudRootPath(account);
+                if (!startPath) {
+                    throw new Error(`账号 ${account.username} 未配置媒体目录`);
+                }
+                if (!this._normalizePath(account.localStrmPrefix)) {
+                    throw new Error(`账号 ${account.username} 未配置本地目录`);
+                }
                 // 初始化统计信息
                 const stats = {
                     success: 0,
@@ -168,9 +237,9 @@ class StrmService {
                 const mediaSuffixs = ConfigService.getConfigValue('task.mediaSuffix').split(';').map(suffix => suffix.toLowerCase());
                  // 如果覆盖 则直接删除currentPath
                 if (overwrite) {
-                    this.deleteDir(path.join(account.localStrmPrefix, startPath), true)
+                    await this.deleteDir(this.getAccountLocalRootPath(account))
                 }
-                await this._processDirectory(startPath, account, stats, mediaSuffixs, overwrite);
+                await this._processDirectory(startPath, account, stats, mediaSuffixs, overwrite, startPath);
                 const userrname = account.username.replace(/(.{3}).*(.{4})/, '$1****$2');
                 // 生成最终统计信息
                 const message = `🎉账号: ${userrname}生成STRM文件完成\n` +
@@ -198,7 +267,7 @@ class StrmService {
      * @param {array} mediaSuffixs - 媒体文件后缀列表
      * @private
      */
-    async _processDirectory(dirPath, account, stats, mediaSuffixs, overwrite) {
+    async _processDirectory(dirPath, account, stats, mediaSuffixs, overwrite, rootPath = dirPath) {
         // 获取alist文件列表
         const alistResponse = await alistService.listFiles(dirPath);
         if (!alistResponse || !alistResponse.data) {
@@ -209,13 +278,14 @@ class StrmService {
         }
 
         const files = alistResponse.data.content;
+        stats.processedDirs.add(dirPath);
         logTaskEvent(`开始处理目录 ${dirPath}, 文件数量: ${files.length}`);
 
         for (const file of files) {
             try {
                 if (file.is_dir) {
                     // 递归处理子目录
-                    await this._processDirectory(path.join(dirPath, file.name), account, stats, mediaSuffixs, overwrite);
+                    await this._processDirectory(this._joinPath(dirPath, file.name), account, stats, mediaSuffixs, overwrite, rootPath);
                 } else {
                     stats.totalFiles++;
                     // 检查是否为媒体文件
@@ -226,7 +296,7 @@ class StrmService {
                     }
 
                     // 构建STRM文件路径
-                    const relativePath = dirPath.substring(dirPath.indexOf('/') + 1).replace(/^\/+|\/+$/g, '')
+                    const relativePath = this._getRelativePath(dirPath, rootPath);
                     const targetDir = path.join(this.baseDir, account.localStrmPrefix, relativePath);
                     const parsedPath = path.parse(file.name);
                     const strmPath = path.join(targetDir, `${parsedPath.name}.strm`);
@@ -246,7 +316,7 @@ class StrmService {
                     await this._ensureDirectoryExists(targetDir);
 
                     // 生成STRM文件内容
-                    const content = this._joinUrl(account.cloudStrmPrefix, path.join(relativePath.replace(/^\/+|\/+$/g, ''), file.name));
+                    const content = this._buildStrmContent(account, relativePath, file.name);
                     // 写入STRM文件
                     await fs.writeFile(strmPath, content, 'utf8');
                     if (process.getuid && process.getuid() === 0) {
@@ -425,14 +495,13 @@ class StrmService {
 
     // 根据文件名获取STRM文件路径
     getStrmPath(task) {
-        let taskName = task.realFolderName.substring(task.realFolderName.indexOf('/') + 1);
         if (!this.enable){
             // 如果cloudStrmPrefix存在 且不是url地址
             if (task.account.cloudStrmPrefix && !task.account.cloudStrmPrefix.startsWith('http')) {
-                return path.join(task.account.cloudStrmPrefix, taskName);
+                return path.join(task.account.cloudStrmPrefix, this.getTaskRelativePath(task));
             }
         }else{
-            return path.join(this.baseDir, task.account.localStrmPrefix, taskName);
+            return this.getTaskStrmDir(task);
         }
         return '';
     }
