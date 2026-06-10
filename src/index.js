@@ -23,6 +23,10 @@ const { EmbyService } = require('./services/emby');
 const { StrmService } = require('./services/strm');
 const AIService = require('./services/ai');
 const CustomPushService = require('./services/message/CustomPushService');
+const { FileTokenStore } = require('cloud189-sdk');
+const crypto = require('crypto');
+const got = require('got');
+const QRCode = require('qrcode');
 
 const app = express();
 const configuredOrigins = (process.env.CORS_ORIGINS || ConfigService.getConfigValue('system.corsOrigins') || '')
@@ -38,6 +42,124 @@ app.use(cors({
 app.use(express.json());
 
 const asyncHandler = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+const cloud189QrLogins = new Map();
+const CLOUD189_QR_TTL_MS = 4 * 60 * 1000;
+const CLOUD189_QR_CONSUME_TTL_MS = 10 * 60 * 1000;
+const CLOUD189_TOKEN_TTL_MS = 6 * 24 * 60 * 60 * 1000;
+const CLOUD189_TV_API_URL = 'https://api.cloud.189.cn';
+const CLOUD189_TV_APP_KEY = '600100885';
+const CLOUD189_TV_APP_SECRET = 'fe5734c74c2f96a38157f420b32dc995';
+const CLOUD189_TV_CLIENT_SUFFIX = {
+    clientType: 'FAMILY_TV',
+    version: '6.5.5',
+    channelId: 'home02',
+    clientSn: 'unknown',
+    model: 'PJX110',
+    osFamily: 'Android',
+    osVersion: '35',
+    networkAccessMode: 'WIFI',
+    telecomsOperator: '46011'
+};
+const CLOUD189_TV_HEADERS = {
+    Accept: 'application/json;charset=UTF-8',
+    'User-Agent': 'EcloudTV/6.5.5 (PJX110; unknown; home02) Android/35'
+};
+const CLOUD189_PC_APP_ID = '8025431004';
+const CLOUD189_PC_CLIENT_SUFFIX = {
+    clientType: 'TELEPC',
+    version: '6.2',
+    channelId: 'web_cloud.189.cn'
+};
+
+function cleanupCloud189QrLogins() {
+    const now = Date.now();
+    for (const [id, login] of cloud189QrLogins.entries()) {
+        if (login.expiresAt < now) {
+            cloud189QrLogins.delete(id);
+        }
+    }
+}
+
+function assertSafeCloud189Username(username) {
+    if (!username || /[\\/]/.test(username)) {
+        throw new Error('二维码登录未返回有效账号');
+    }
+}
+
+function getCloud189TvSignatureHeaders(url, method) {
+    const timestamp = Date.now();
+    const requestUri = new URL(url).pathname;
+    const signText = `AppKey=${CLOUD189_TV_APP_KEY}&Operate=${method}&RequestURI=${requestUri}&Timestamp=${timestamp}`;
+    return {
+        Timestamp: String(timestamp),
+        'X-Request-ID': crypto.randomUUID(),
+        AppKey: CLOUD189_TV_APP_KEY,
+        AppSignature: crypto.createHmac('sha1', CLOUD189_TV_APP_SECRET)
+            .update(signText)
+            .digest('hex')
+            .toUpperCase()
+    };
+}
+
+function parseCloud189TvError(error) {
+    const rawBody = error.response?.body;
+    if (!rawBody) {
+        throw error;
+    }
+    try {
+        return JSON.parse(rawBody);
+    } catch (parseError) {
+        throw error;
+    }
+}
+
+async function requestCloud189Tv(action, method, searchParams = {}) {
+    const url = `${CLOUD189_TV_API_URL}${action}`;
+    try {
+        return await got(url, {
+            method,
+            searchParams: {
+                ...CLOUD189_TV_CLIENT_SUFFIX,
+                ...searchParams
+            },
+            headers: {
+                ...CLOUD189_TV_HEADERS,
+                ...getCloud189TvSignatureHeaders(url, method)
+            },
+            timeout: { request: 30000 }
+        }).json();
+    } catch (error) {
+        if (error instanceof got.HTTPError) {
+            return parseCloud189TvError(error);
+        }
+        throw error;
+    }
+}
+
+async function getCloud189PcSession(accessToken) {
+    try {
+        return await got(`${CLOUD189_TV_API_URL}/getSessionForPC.action`, {
+            method: 'POST',
+            searchParams: {
+                appId: CLOUD189_PC_APP_ID,
+                ...CLOUD189_PC_CLIENT_SUFFIX,
+                rand: Date.now(),
+                accessToken
+            },
+            headers: {
+                Accept: 'application/json;charset=UTF-8',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36'
+            },
+            timeout: { request: 30000 }
+        }).json();
+    } catch (error) {
+        if (error instanceof got.HTTPError) {
+            return parseCloud189TvError(error);
+        }
+        throw error;
+    }
+}
+
 const publicDirs = [
     path.join(__dirname, 'public'),
     path.join(__dirname, '../src/public')
@@ -210,17 +332,133 @@ AppDataSource.initialize().then(async () => {
         res.json({ success: true, data: accounts });
     }));
 
+    app.post('/api/accounts/cloud189/qrcode', asyncHandler(async (req, res) => {
+        cleanupCloud189QrLogins();
+        const uuidRes = await requestCloud189Tv('/family/manage/getQrCodeUUID.action', 'GET');
+
+        if (!uuidRes || !uuidRes.uuid) {
+            throw new Error('获取天翼云盘二维码失败');
+        }
+
+        const qrId = crypto.randomUUID();
+        const imageUrl = await QRCode.toDataURL(uuidRes.uuid, {
+            errorCorrectionLevel: 'M',
+            margin: 1,
+            width: 256
+        });
+        cloud189QrLogins.set(qrId, {
+            uuid: uuidRes.uuid,
+            expiresAt: Date.now() + CLOUD189_QR_TTL_MS,
+            tokenSession: null,
+            username: ''
+        });
+
+        res.json({
+            success: true,
+            data: {
+                qrId,
+                uuid: uuidRes.uuid,
+                expiresIn: Math.floor(CLOUD189_QR_TTL_MS / 1000),
+                imageUrl
+            }
+        });
+    }));
+
+    app.get('/api/accounts/cloud189/qrcode/:qrId', asyncHandler(async (req, res) => {
+        cleanupCloud189QrLogins();
+        const qrLogin = cloud189QrLogins.get(req.params.qrId);
+        if (!qrLogin) {
+            res.json({ success: true, data: { status: 'expired' } });
+            return;
+        }
+
+        if (qrLogin.tokenSession) {
+            res.json({
+                success: true,
+                data: {
+                    status: 'success',
+                    qrLoginId: req.params.qrId,
+                    username: qrLogin.username
+                }
+            });
+            return;
+        }
+
+        const accessTokenResp = await requestCloud189Tv('/family/manage/qrcodeLoginResult.action', 'GET', {
+            uuid: qrLogin.uuid
+        });
+        if (accessTokenResp.accessToken) {
+            let tokenSession = await getCloud189PcSession(accessTokenResp.accessToken);
+            if (!tokenSession.accessToken || !tokenSession.loginName) {
+                const tvSession = await requestCloud189Tv('/family/manage/loginFamilyMerge.action', 'GET', {
+                    e189AccessToken: accessTokenResp.accessToken
+                });
+                tokenSession = {
+                    ...tvSession,
+                    accessToken: tvSession.accessToken || accessTokenResp.accessToken,
+                    refreshToken: tvSession.refreshToken || '',
+                    loginName: tvSession.loginName
+                };
+            }
+            if (!tokenSession.accessToken) {
+                throw new Error(tokenSession.res_message || tokenSession.message || '二维码登录未返回有效会话');
+            }
+            const username = tokenSession.loginName;
+            assertSafeCloud189Username(username);
+            qrLogin.tokenSession = tokenSession;
+            qrLogin.username = username;
+            qrLogin.expiresAt = Date.now() + CLOUD189_QR_CONSUME_TTL_MS;
+            res.json({
+                success: true,
+                data: {
+                    status: 'success',
+                    qrLoginId: req.params.qrId,
+                    username
+                }
+            });
+            return;
+        }
+
+        if (accessTokenResp.res_code === 'QrCodeRollLoginFail') {
+            res.json({ success: true, data: { status: 'waiting' } });
+            return;
+        }
+
+        throw new Error(accessTokenResp.res_message || accessTokenResp.message || '二维码登录失败');
+    }));
+
     app.post('/api/accounts', async (req, res) => {
         try {
+            const qrLoginId = req.body.qrLoginId;
+            const qrLogin = qrLoginId ? cloud189QrLogins.get(qrLoginId) : null;
+            if (qrLoginId && (!qrLogin || !qrLogin.tokenSession || qrLogin.expiresAt < Date.now())) {
+                throw new Error('二维码登录已失效，请重新扫码');
+            }
+
             let account = accountRepo.create(req.body);
+            if (qrLogin) {
+                account.cloudType = 'cloud189';
+                account.username = qrLogin.username;
+                account.password = '';
+                account.cookies = '';
+            }
             if (req.body.id) {
                 const existingAccount = await accountRepo.findOneBy({ id: parseInt(req.body.id) });
                 if (!existingAccount) throw new Error('账号不存在');
                 account = accountRepo.merge(existingAccount, req.body);
-                if (!req.body.password) {
+                if (qrLogin) {
+                    if (qrLogin.username !== existingAccount.username) {
+                        throw new Error('二维码登录账号与当前账号不一致');
+                    }
+                    account.cloudType = 'cloud189';
+                    account.username = existingAccount.username;
+                    account.password = '';
+                    account.cookies = '';
+                }
+                if (!qrLogin && !req.body.password) {
                     account.password = existingAccount.password;
                 }
-                if (!req.body.cookies) {
+                if (!qrLogin && !req.body.cookies) {
                     account.cookies = existingAccount.cookies;
                 }
             }
@@ -257,6 +495,15 @@ AppDataSource.initialize().then(async () => {
                     res.json({ success: false, error: loginResult.message });
                     return;
                 }
+            }
+            if (qrLogin) {
+                const tokenStore = new FileTokenStore(`data/${account.username}.json`);
+                await tokenStore.update({
+                    accessToken: qrLogin.tokenSession.accessToken,
+                    refreshToken: qrLogin.tokenSession.refreshToken || '',
+                    expiresIn: Date.now() + CLOUD189_TOKEN_TTL_MS
+                });
+                cloud189QrLogins.delete(qrLoginId);
             }
             await accountRepo.save(account);
             CloudUtils.removeInstance(account.username);

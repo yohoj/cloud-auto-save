@@ -113,6 +113,18 @@
                                     autocomplete="off" data-lpignore="true" data-1p-ignore="true"
                                     data-bwignore="true" spellcheck="false">
                             </div>
+                            <div class="form-group" id="cloud189QrLoginGroup">
+                                <label>二维码登录</label>
+                                <input type="hidden" id="cloud189QrLoginId">
+                                <div class="qr-login-actions">
+                                    <button type="button" class="btn-default" id="cloud189QrLoginBtn" onclick="startCloud189QrLogin()">获取二维码</button>
+                                    <button type="button" class="btn-default" id="cloud189QrCancelBtn" onclick="cancelCloud189QrLogin()" style="display: none;">取消</button>
+                                </div>
+                                <div class="qr-login-box" id="cloud189QrLoginBox" style="display: none;">
+                                    <img id="cloud189QrImage" src="" alt="天翼云盘二维码">
+                                    <div class="qr-login-status" id="cloud189QrStatus">等待扫码</div>
+                                </div>
+                            </div>
                             <!---验证码-->
                             <div class="form-group" id="account-captcha" style="display: none;">
                                 <label for="captcha">验证码</label>

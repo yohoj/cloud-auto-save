@@ -1,5 +1,112 @@
 let accountsList = []
 let chooseAccount = null
+let cloud189QrLoginTimer = null
+let cloud189QrLoginActiveId = ''
+
+function resetCloud189QrLogin(keepResult = false) {
+    if (cloud189QrLoginTimer) {
+        clearTimeout(cloud189QrLoginTimer);
+        cloud189QrLoginTimer = null;
+    }
+    cloud189QrLoginActiveId = '';
+    const qrLoginIdInput = document.getElementById('cloud189QrLoginId');
+    const qrBox = document.getElementById('cloud189QrLoginBox');
+    const qrImage = document.getElementById('cloud189QrImage');
+    const qrStatus = document.getElementById('cloud189QrStatus');
+    const startBtn = document.getElementById('cloud189QrLoginBtn');
+    const cancelBtn = document.getElementById('cloud189QrCancelBtn');
+    if (!keepResult && qrLoginIdInput) qrLoginIdInput.value = '';
+    if (qrBox) qrBox.style.display = keepResult ? 'flex' : 'none';
+    if (!keepResult && qrImage) qrImage.src = '';
+    if (qrStatus) qrStatus.textContent = keepResult ? '扫码成功' : '等待扫码';
+    if (startBtn) {
+        startBtn.disabled = false;
+        startBtn.classList.remove('loading');
+        startBtn.textContent = keepResult ? '重新获取二维码' : '获取二维码';
+    }
+    if (cancelBtn) cancelBtn.style.display = 'none';
+}
+
+function cancelCloud189QrLogin() {
+    resetCloud189QrLogin();
+}
+
+async function startCloud189QrLogin() {
+    if (document.getElementById('cloudType').value !== 'cloud189') {
+        message.warning('请选择天翼云盘');
+        return;
+    }
+    resetCloud189QrLogin();
+    const qrBox = document.getElementById('cloud189QrLoginBox');
+    const qrImage = document.getElementById('cloud189QrImage');
+    const qrStatus = document.getElementById('cloud189QrStatus');
+    const startBtn = document.getElementById('cloud189QrLoginBtn');
+    const cancelBtn = document.getElementById('cloud189QrCancelBtn');
+    try {
+        if (qrBox) qrBox.style.display = 'flex';
+        if (qrStatus) qrStatus.textContent = '正在生成二维码';
+        if (startBtn) {
+            startBtn.disabled = true;
+            startBtn.classList.add('loading');
+        }
+        const response = await fetch('/api/accounts/cloud189/qrcode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || '二维码生成失败');
+        }
+        cloud189QrLoginActiveId = data.data.qrId;
+        if (qrImage) qrImage.src = data.data.imageUrl;
+        if (qrStatus) qrStatus.textContent = '请使用天翼云盘 App 或微信扫码';
+        if (startBtn) {
+            startBtn.disabled = false;
+            startBtn.classList.remove('loading');
+            startBtn.textContent = '刷新二维码';
+        }
+        if (cancelBtn) cancelBtn.style.display = 'inline-flex';
+        pollCloud189QrLogin(data.data.qrId);
+    } catch (error) {
+        resetCloud189QrLogin();
+        message.warning('二维码登录失败: ' + error.message);
+    }
+}
+
+async function pollCloud189QrLogin(qrId) {
+    if (!qrId || qrId !== cloud189QrLoginActiveId) return;
+    try {
+        const response = await fetch(`/api/accounts/cloud189/qrcode/${qrId}`);
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || '查询扫码状态失败');
+        }
+        const status = data.data.status;
+        const qrStatus = document.getElementById('cloud189QrStatus');
+        if (status === 'success') {
+            document.getElementById('cloud189QrLoginId').value = data.data.qrLoginId;
+            document.getElementById('username').value = data.data.username || '';
+            resetCloud189QrLogin(true);
+            const successStatus = document.getElementById('cloud189QrStatus');
+            if (successStatus) successStatus.textContent = '扫码成功，正在添加账号';
+            await createAccount();
+            return;
+        }
+        if (status === 'expired') {
+            resetCloud189QrLogin();
+            message.warning('二维码已失效，请重新获取');
+            return;
+        }
+        if (qrStatus) {
+            qrStatus.textContent = status === 'scanned' ? '已扫码，请在手机端确认' : '等待扫码';
+        }
+        cloud189QrLoginTimer = setTimeout(() => pollCloud189QrLogin(qrId), 3000);
+    } catch (error) {
+        resetCloud189QrLogin();
+        message.warning('二维码登录失败: ' + error.message);
+    }
+}
+
 // 账号相关功能
 async function fetchAccounts(updateSelect = false) {
     const response = await fetch('/api/accounts');
@@ -92,6 +199,7 @@ function initAccountForm() {
 
 function openAddAccountModal() {
     chooseAccount = null
+    resetCloud189QrLogin();
     const modal = document.getElementById('addAccountModal');
     modal.style.display = 'block';
     document.getElementById('cloudType').value = 'cloud189';
@@ -99,6 +207,7 @@ function openAddAccountModal() {
 }
 
 function closeAddAccountModal() {
+    resetCloud189QrLogin();
     const modal = document.getElementById('addAccountModal');
     modal.style.display = 'none';
     const modalTitle = modal.querySelector('h3');
@@ -125,6 +234,7 @@ async function editAccount(id) {
         message.warning('账号不存在');
         return;
     }
+    resetCloud189QrLogin();
 
     // 打开模态框
     const modal = document.getElementById('addAccountModal');
@@ -156,6 +266,7 @@ async function createAccount() {
     const cloudType = document.getElementById('cloudType').value;
     const password = document.getElementById('password').value;
     const cookies  = document.getElementById('cookie').value;
+    const qrLoginId = document.getElementById('cloud189QrLoginId').value;
     const alias = document.getElementById('alias').value;
     const validateCodeDom = document.getElementById('validateCode')
     const cloudStrmPrefix = document.getElementById('cloudStrmPrefix').value;
@@ -173,8 +284,8 @@ async function createAccount() {
         message.warning('夸克网盘账号必须填写Cookie');
         return;
     }
-    if (cloudType === 'cloud189' && !chooseAccount?.id && !password && !cookies) {
-        message.warning('天翼云盘账号密码和Cookie不能同时为空');
+    if (cloudType === 'cloud189' && !chooseAccount?.id && !password && !cookies && !qrLoginId) {
+        message.warning('天翼云盘账号密码、二维码登录和Cookie不能同时为空');
         return;
     }
     if (chooseAccount?.id) {
@@ -184,7 +295,7 @@ async function createAccount() {
     const response = await fetch('/api/accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: chooseAccount?.id, cloudType, username, password, cookies, alias, validateCode, cloudStrmPrefix, localStrmPrefix, embyPathReplace })
+        body: JSON.stringify({ id: chooseAccount?.id, cloudType, username, password, cookies, qrLoginId, alias, validateCode, cloudStrmPrefix, localStrmPrefix, embyPathReplace })
     });
     const data = await response.json();
     if (data.success) {
@@ -218,16 +329,20 @@ function updateAccountFormByCloudType() {
     const cookieInput = document.getElementById('cookie');
     const helpText = document.getElementById('accountCredentialHelp');
     const cloudStrmPrefix = document.getElementById('cloudStrmPrefix');
+    const qrLoginGroup = document.getElementById('cloud189QrLoginGroup');
     if (cloudType === 'quark') {
+        resetCloud189QrLogin();
         passwordInput.placeholder = '夸克网盘无需填写';
         cookieInput.placeholder = '请输入夸克网盘Cookie';
         helpText.textContent = '夸克网盘使用Cookie登录，请填写Cookie。';
         cloudStrmPrefix.placeholder = 'http://alist:5244/d/夸克网盘';
+        if (qrLoginGroup) qrLoginGroup.style.display = 'none';
     } else {
         passwordInput.placeholder = '';
         cookieInput.placeholder = '';
-        helpText.textContent = '天翼云盘密码和Cookie至少填写一个，如果都填写，则只有账号密码生效。';
+        helpText.textContent = '天翼云盘可使用账号密码、二维码登录或Cookie；如果填写账号密码，则优先使用账号密码。';
         cloudStrmPrefix.placeholder = 'http://alist:5244/d/云盘';
+        if (qrLoginGroup) qrLoginGroup.style.display = 'block';
     }
 }
 function formatBytes(bytes) {

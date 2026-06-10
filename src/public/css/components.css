@@ -89,6 +89,44 @@
     margin-top: 4px;
 }
 
+.qr-login-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.qr-login-box {
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: rgba(127, 127, 127, 0.06);
+}
+
+.qr-login-box img {
+    width: 160px;
+    height: 160px;
+    flex: 0 0 160px;
+    object-fit: contain;
+    background: #fff;
+    border-radius: 4px;
+}
+
+.qr-login-status {
+    color: var(--text-color);
+    font-size: 0.95rem;
+    line-height: 1.4;
+}
+
+@media (max-width: 480px) {
+    .qr-login-box {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
 .path-example {
     display: inline-block;
     max-width: 100%;
