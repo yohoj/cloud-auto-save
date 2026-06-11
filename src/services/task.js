@@ -84,37 +84,26 @@ class TaskService {
         return {id: taskDto.targetFolderId, name: taskDto.targetFolder || ''};
     }
 
-    _getSelectedShareFolders(taskDto, shareInfo, shareDir) {
-        const selectedFolderIds = Array.isArray(taskDto.selectedFolders)
+    _getSelectedShareFolder(taskDto, shareInfo, shareDir) {
+        const selectedFolders = Array.isArray(taskDto.selectedFolders)
             ? taskDto.selectedFolders.filter(Boolean)
             : [];
-        const folderIds = selectedFolderIds.length > 0 ? selectedFolderIds : [shareInfo.fileId];
-        const subFolders = shareDir?.fileListAO?.folderList || [];
-        const selectedFolders = [];
-        const selectedFolderSet = new Set();
 
-        for (const folderId of folderIds) {
-            const selectedFolderId = String(folderId) === '-1' ? shareInfo.fileId : folderId;
-            const normalizedFolderId = String(selectedFolderId);
-            if (selectedFolderSet.has(normalizedFolderId)) {
-                continue;
-            }
-
-            if (normalizedFolderId === String(shareInfo.fileId)) {
-                selectedFolders.push({ id: shareInfo.fileId, name: '' });
-                selectedFolderSet.add(normalizedFolderId);
-                continue;
-            }
-
-            const selectedFolder = subFolders.find(folder => String(folder.id) === normalizedFolderId);
-            if (!selectedFolder) {
-                throw new Error('选择的分享目录不存在');
-            }
-            selectedFolders.push({ id: selectedFolder.id, name: selectedFolder.name });
-            selectedFolderSet.add(normalizedFolderId);
+        if (!taskDto.tgbot && selectedFolders.length > 1) {
+            throw new Error('只能选择一个分享目录');
         }
 
-        return selectedFolders;
+        const selectedFolderId = selectedFolders[0] || '-1';
+        if (String(selectedFolderId) === '-1' || String(selectedFolderId) === String(shareInfo.fileId)) {
+            return { id: shareInfo.fileId, name: '' };
+        }
+
+        const subFolders = shareDir?.fileListAO?.folderList || [];
+        const selectedFolder = subFolders.find(folder => String(folder.id) === String(selectedFolderId));
+        if (!selectedFolder) {
+            throw new Error('选择的分享目录不存在');
+        }
+        return { id: selectedFolder.id, name: selectedFolder.name };
     }
 
     // 处理文件夹分享
@@ -122,22 +111,20 @@ class TaskService {
         const result = await cloud189.listShareDir(shareInfo.shareId, shareInfo.fileId, shareInfo.shareMode, taskDto.accessCode);
         if (!result?.fileListAO) throw new Error('获取分享目录失败');
 
-        const selectedFolders = this._getSelectedShareFolders(taskDto, shareInfo, result);
+        const selectedFolder = this._getSelectedShareFolder(taskDto, shareInfo, result);
         taskDto.realRootFolderId = targetFolder.id;
-        for (const selectedFolder of selectedFolders) {
-            const task = this.taskRepo.create(
-                this._createTaskConfig(
-                    taskDto,
-                    shareInfo,
-                    targetFolder,
-                    shareInfo.fileName,
-                    0,
-                    selectedFolder.id,
-                    selectedFolder.name
-                )
-            );
-            tasks.push(await this.taskRepo.save(task));
-        }
+        const task = this.taskRepo.create(
+            this._createTaskConfig(
+                taskDto,
+                shareInfo,
+                targetFolder,
+                shareInfo.fileName,
+                0,
+                selectedFolder.id,
+                selectedFolder.name
+            )
+        );
+        tasks.push(await this.taskRepo.save(task));
     }
 
     // 处理单文件分享
