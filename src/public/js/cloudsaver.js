@@ -47,6 +47,38 @@ async function searchResources() {
     }
 }
 
+function getCloudSaverResultLink(resource) {
+    const cloudLink = resource.cloudLinks?.[0];
+    return typeof cloudLink === 'string' ? cloudLink : cloudLink?.link || '';
+}
+
+function getCloudSaverCloudTypeFromLink(link) {
+    let text = (link || '').trim();
+    try {
+        text = decodeURIComponent(text);
+    } catch (error) {
+        // 如果不是合法的 URL 编码，继续使用原文本判断。
+    }
+    if (/pan\.quark\.cn|drive\.quark\.cn|quark\.cn\/s\//i.test(text)) {
+        return 'quark';
+    }
+    if (/cloud\.189\.cn|h5\.cloud\.189\.cn|content\.21cn\.com/i.test(text)) {
+        return 'cloud189';
+    }
+    return '';
+}
+
+function getCloudSaverCloudTypeMeta(resource) {
+    const cloudLink = resource.cloudLinks?.[0];
+    const cloudType = resource.cloudType
+        || (typeof cloudLink === 'string' ? '' : cloudLink?.cloudType)
+        || getCloudSaverCloudTypeFromLink(getCloudSaverResultLink(resource));
+
+    return cloudType === 'quark'
+        ? { label: '夸克', className: 'cloud-tag-quark' }
+        : { label: '天翼', className: 'cloud-tag-cloud189' };
+}
+
 function renderResults() {
     const resultsDiv = document.querySelector('.cloudsaver-results-list');
     document.querySelector('.cloudsaver-action-buttons').style.display = 'none';
@@ -58,11 +90,15 @@ function renderResults() {
         document.querySelector('.cloudsaver-action-buttons').style.display = 'flex';
         resultsDiv.innerHTML = `
             <div style="padding: 8px; color: #999; font-size: 12px;">以下资源来自 <a href="https://github.com/jiangrui1994/cloudsaver" target="_blank" style="color: #666; text-decoration: underline;">CloudSaver</a></div>
-            ${searchResults.map((item, index) => `
+            ${searchResults.map((item, index) => {
+                const cloudTypeMeta = getCloudSaverCloudTypeMeta(item);
+                return `
                 <div class="cloudsaver-result-item" onclick="selectItem(${index})" data-index="${index}">
-                    ${item.title}
+                    <span class="cloudsaver-cloud-tag ${cloudTypeMeta.className}">${cloudTypeMeta.label}</span>
+                    <span class="cloudsaver-result-title">${escapeHtml(item.title)}</span>
                 </div>
-            `).join('')}
+            `;
+            }).join('')}
         `;
     }
     document.getElementById('searchResults').style.display = 'block';
@@ -83,10 +119,11 @@ function handleSelectedResource(action) {
     }
 
     const resource = searchResults[selectedIndex];
+    const link = getCloudSaverResultLink(resource);
     if (action === 'open') {
-        window.open(resource.cloudLinks[0].link, '_blank');
+        window.open(link, '_blank');
     } else if (action === 'create') {
-        document.getElementById('shareLink').value = resource.cloudLinks[0].link;
+        document.getElementById('shareLink').value = link;
         // 触发 blur 事件
         document.getElementById('shareLink').dispatchEvent(new Event('blur'));
         closeCloudsaver();

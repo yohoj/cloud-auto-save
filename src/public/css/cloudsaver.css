@@ -28,9 +28,31 @@
 }
 
 .cloudsaver-result-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     padding: 10px;
     cursor: pointer;
     border-bottom: 1px solid var(--border-color);
+}
+
+.cloudsaver-cloud-tag {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    flex: 0 0 auto;
+}
+
+.cloudsaver-result-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .cloudsaver-result-item:hover {

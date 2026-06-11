@@ -1005,6 +1005,44 @@ class TelegramBotService {
         }
     }
 
+    _escapeTelegramHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    _getCloudSaverResultLink(resource) {
+        const cloudLink = resource.cloudLinks?.[0];
+        return typeof cloudLink === 'string' ? cloudLink : cloudLink?.link || '';
+    }
+
+    _getCloudSaverCloudTypeFromLink(link) {
+        let text = (link || '').trim();
+        try {
+            text = decodeURIComponent(text);
+        } catch (error) {
+            // 如果不是合法的 URL 编码，继续使用原文本判断。
+        }
+        if (/pan\.quark\.cn|drive\.quark\.cn|quark\.cn\/s\//i.test(text)) {
+            return 'quark';
+        }
+        if (/cloud\.189\.cn|h5\.cloud\.189\.cn|content\.21cn\.com/i.test(text)) {
+            return 'cloud189';
+        }
+        return '';
+    }
+
+    _getCloudSaverCloudTypeLabel(resource) {
+        const cloudLink = resource.cloudLinks?.[0];
+        const cloudType = resource.cloudType
+            || (typeof cloudLink === 'string' ? '' : cloudLink?.cloudType)
+            || this._getCloudSaverCloudTypeFromLink(this._getCloudSaverResultLink(resource));
+
+        return cloudType === 'quark' ? '夸克' : '天翼';
+    }
+
     async cloudSaverSearch(chatId, msg) {
         const keyword = msg.text?.trim();
         if (!keyword) return;
@@ -1022,13 +1060,16 @@ class TelegramBotService {
             }
             // 保存结果到this.cloudSaverSearchMap
             result.forEach((item, index) => {
-                this.cloudSaverSearchMap.set(index + 1, item.cloudLinks[0].link);
+                this.cloudSaverSearchMap.set(index + 1, this._getCloudSaverResultLink(item));
             });
             const results = `💡 以下资源来自 CloudSaver\n` +
                 `📝 共找到 ${result.length} 个结果,输入编号可转存\n` +
-                result.map((item, index) => 
-                    `${index + 1}. 🎬 <a href="${item.cloudLinks[0].link}">${item.title}</a>`
-                ).join('\n\n');
+                result.map((item, index) => {
+                    const link = this._escapeTelegramHtml(this._getCloudSaverResultLink(item));
+                    const title = this._escapeTelegramHtml(item.title);
+                    const cloudTypeLabel = this._getCloudSaverCloudTypeLabel(item);
+                    return `${index + 1}. 【${cloudTypeLabel}】 <a href="${link}">${title}</a>`;
+                }).join('\n\n');
             await this.bot.editMessageText(`搜索结果：\n\n${results}`, {
                 chat_id: chatId,
                 message_id: message.message_id,

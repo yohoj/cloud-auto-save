@@ -3,6 +3,76 @@ const { logTaskEvent } = require('../utils/logUtils');
 const crypto = require('crypto');
 const got = require('got');
 const ProxyUtil = require('../utils/ProxyUtil');
+
+const CLOUD189_SESSION_ERROR = '天翼云盘登录态失效，请在账号设置中重新扫码登录，或补充账号密码/有效 SSON Cookie。';
+const CLOUD189_TV_API_URL = 'https://api.cloud.189.cn';
+const CLOUD189_TV_APP_KEY = '600100885';
+const CLOUD189_TV_APP_SECRET = 'fe5734c74c2f96a38157f420b32dc995';
+const CLOUD189_TV_CLIENT_SUFFIX = {
+    clientType: 'FAMILY_TV',
+    version: '6.5.5',
+    channelId: 'home02',
+    clientSn: 'unknown',
+    model: 'PJX110',
+    osFamily: 'Android',
+    osVersion: '35',
+    networkAccessMode: 'WIFI',
+    telecomsOperator: '46011'
+};
+const CLOUD189_TV_HEADERS = {
+    Accept: 'application/json;charset=UTF-8',
+    'User-Agent': 'EcloudTV/6.5.5 (PJX110; unknown; home02) Android/35'
+};
+
+function isCloud189SessionError(error) {
+    return error?.message === 'Can not get session.';
+}
+
+function normalizeSsonCookie(cookie) {
+    const value = (cookie || '').trim();
+    const match = value.match(/(?:^|;\s*)SSON=([^;]+)/i);
+    return match ? match[1] : value.replace(/^SSON=/i, '');
+}
+
+function getCloud189TvSignatureHeaders(url, method) {
+    const timestamp = Date.now();
+    const requestUri = new URL(url).pathname;
+    const signText = `AppKey=${CLOUD189_TV_APP_KEY}&Operate=${method}&RequestURI=${requestUri}&Timestamp=${timestamp}`;
+    return {
+        Timestamp: String(timestamp),
+        'X-Request-ID': crypto.randomUUID(),
+        AppKey: CLOUD189_TV_APP_KEY,
+        AppSignature: crypto.createHmac('sha1', CLOUD189_TV_APP_SECRET)
+            .update(signText)
+            .digest('hex')
+            .toUpperCase()
+    };
+}
+
+function shouldUseTvSessionFallback(account, token) {
+    return !account.password && !account.cookies && token?.accessToken && !token.refreshToken;
+}
+
+async function getCloud189TvSession(accessToken) {
+    const action = '/family/manage/loginFamilyMerge.action';
+    const method = 'GET';
+    const url = `${CLOUD189_TV_API_URL}${action}`;
+    return await got(url, {
+        method,
+        searchParams: {
+            ...CLOUD189_TV_CLIENT_SUFFIX,
+            e189AccessToken: accessToken
+        },
+        headers: {
+            ...CLOUD189_TV_HEADERS,
+            ...getCloud189TvSignatureHeaders(url, method)
+        },
+        agent: ProxyUtil.getProxyAgent('cloud189'),
+        dnsLookupIpVersion: 'ipv4',
+        timeout: { request: 30000 }
+    }).json();
+}
+
 class Cloud189Service {
     static instances = new Map();
 
@@ -24,17 +94,47 @@ class Cloud189Service {
     }
 
     _createClient(account, proxy) {
+        const tokenStore = new FileTokenStore(`data/${account.username}.json`);
         const _options = {
             username: account.username,
             password: account.password,
-            token: new FileTokenStore(`data/${account.username}.json`)
+            token: tokenStore
         }
         if (!account.password && account.cookies) {
-            _options.ssonCookie = account.cookies
+            _options.ssonCookie = normalizeSsonCookie(account.cookies)
             _options.password = null
         }
         _options.proxy = proxy
-        return new CloudClient(_options);
+        const client = new CloudClient(_options);
+        client.request = client.request.extend({
+            dnsLookupIpVersion: 'ipv4'
+        });
+        this._installTvSessionFallback(client, tokenStore, account);
+        return client;
+    }
+
+    _installTvSessionFallback(client, tokenStore, account) {
+        const originalGetSession = client.getSession.bind(client);
+        client.getSession = async () => {
+            const token = await tokenStore.get();
+            if (shouldUseTvSessionFallback(account, token)) {
+                try {
+                    const tvSession = await getCloud189TvSession(token.accessToken);
+                    if (tvSession?.sessionKey) {
+                        return {
+                            ...tvSession,
+                            accessToken: token.accessToken,
+                            refreshToken: token.refreshToken || ''
+                        };
+                    }
+                } catch (error) {
+                    const sessionError = new Error('Can not get session.');
+                    sessionError.cause = error;
+                    throw sessionError;
+                }
+            }
+            return await originalGetSession();
+        };
     }
 
     // 重新给所有实例设置代理
@@ -86,6 +186,8 @@ class Cloud189Service {
                     }
                 }
                 logTaskEvent('请求天翼云盘接口失败:' + rawBody);
+            } else if (isCloud189SessionError(error)) {
+                logTaskEvent(CLOUD189_SESSION_ERROR);
             } else if (error instanceof got.TimeoutError) {
                 logTaskEvent('请求天翼云盘接口失败: 请求超时, 请检查是否能访问天翼云盘');
             } else if (error instanceof got.RequestError) {
@@ -93,7 +195,9 @@ class Cloud189Service {
             } else {
                 logTaskEvent('其他异常:' + error.message)
             }
-            console.log(error)
+            if (!isCloud189SessionError(error)) {
+                console.log(error)
+            }
             return null
         }
     }
@@ -105,6 +209,8 @@ class Cloud189Service {
             if (error instanceof got.HTTPError) {
                 const responseBody = error.response.body;
                 logTaskEvent('请求天翼云盘接口失败:' + responseBody);
+            } else if (isCloud189SessionError(error)) {
+                logTaskEvent(CLOUD189_SESSION_ERROR);
             } else if (error instanceof got.TimeoutError) {
                 logTaskEvent('请求天翼云盘接口失败: 请求超时, 请检查是否能访问天翼云盘');
             } else if (error instanceof got.RequestError) {
@@ -113,7 +219,9 @@ class Cloud189Service {
                 // 捕获其他类型的错误
                 logTaskEvent('获取用户空间信息失败:' + error.message);
             }
-            console.log(error)
+            if (!isCloud189SessionError(error)) {
+                console.log(error)
+            }
             return null
         }
 

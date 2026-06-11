@@ -126,6 +126,7 @@ async function requestCloud189Tv(action, method, searchParams = {}) {
                 ...CLOUD189_TV_HEADERS,
                 ...getCloud189TvSignatureHeaders(url, method)
             },
+            dnsLookupIpVersion: 'ipv4',
             timeout: { request: 30000 }
         }).json();
     } catch (error) {
@@ -150,6 +151,7 @@ async function getCloud189PcSession(accessToken) {
                 Accept: 'application/json;charset=UTF-8',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36'
             },
+            dnsLookupIpVersion: 'ipv4',
             timeout: { request: 30000 }
         }).json();
     } catch (error) {
@@ -396,13 +398,14 @@ AppDataSource.initialize().then(async () => {
                 tokenSession = {
                     ...tvSession,
                     accessToken: tvSession.accessToken || accessTokenResp.accessToken,
-                    refreshToken: tvSession.refreshToken || '',
+                    refreshToken: tvSession.refreshToken || accessTokenResp.refreshToken || accessTokenResp.refresh_token || '',
                     loginName: tvSession.loginName
                 };
             }
             if (!tokenSession.accessToken) {
                 throw new Error(tokenSession.res_message || tokenSession.message || '二维码登录未返回有效会话');
             }
+            tokenSession.refreshToken = tokenSession.refreshToken || accessTokenResp.refreshToken || accessTokenResp.refresh_token || '';
             const username = tokenSession.loginName;
             assertSafeCloud189Username(username);
             qrLogin.tokenSession = tokenSession;

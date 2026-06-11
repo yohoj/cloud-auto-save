@@ -35,9 +35,14 @@ function setTheme(theme) {
     // 更新主题和状态栏颜色的函数
     const updateThemeAndStatusBar = (isDark) => {
         const currentTheme = isDark ? 'dark' : 'light';
-        const statusBarColor = isDark ? '#1a1a1a' : '#ffffff';
         document.documentElement.setAttribute('data-theme', currentTheme);
-        document.querySelector('meta[name="theme-color"]').setAttribute('content', statusBarColor);
+        const statusBarColor = getComputedStyle(document.documentElement)
+            .getPropertyValue('--status-bar-color')
+            .trim() || (isDark ? '#0e1420' : '#eaf4ff');
+        const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+        if (themeColorMeta) {
+            themeColorMeta.setAttribute('content', statusBarColor);
+        }
     };
     if (theme === 'auto') {
         // 检查系统主题

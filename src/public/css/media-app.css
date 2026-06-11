@@ -553,6 +553,7 @@ textarea:focus {
     --tahoe-fill: rgba(247, 249, 252, 0.72);
     --tahoe-shadow: 0 24px 70px rgba(28, 39, 56, 0.16);
     --tahoe-shadow-soft: 0 12px 30px rgba(28, 39, 56, 0.1);
+    --status-bar-color: #eaf4ff;
     --radius: 18px;
     --control-height: 38px;
 }
@@ -572,6 +573,7 @@ textarea:focus {
     --tahoe-fill: rgba(22, 27, 35, 0.74);
     --tahoe-shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
     --tahoe-shadow-soft: 0 14px 34px rgba(0, 0, 0, 0.3);
+    --status-bar-color: #0e1420;
 }
 
 html {
@@ -1345,11 +1347,17 @@ html body .container #taskTable td:first-child button {
 @media (max-width: 860px) {
     body {
         display: block !important;
-        padding: 12px !important;
+        padding:
+            calc(12px + env(safe-area-inset-top))
+            max(12px, env(safe-area-inset-right))
+            calc(12px + env(safe-area-inset-bottom))
+            max(12px, env(safe-area-inset-left)) !important;
         overflow-x: hidden !important;
     }
 
     .header {
+        position: static !important;
+        top: auto !important;
         margin-bottom: 12px !important;
         grid-template-columns: 44px minmax(0, 1fr) 42px !important;
         padding: 12px !important;

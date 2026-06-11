@@ -12,28 +12,59 @@ interface LoginResponse {
     };
 }
 
+type SupportedCloudType = 'cloud189' | 'quark';
+
+interface RawCloudLink {
+    cloudType?: string | number;
+    link?: string;
+    url?: string;
+    shareLink?: string;
+}
+
+type CloudLinkInput = string | RawCloudLink;
+
 interface CloudLink {
-    cloudType: number;
+    cloudType: SupportedCloudType;
+    cloudTypeName: string;
     link: string;
 }
 interface CloudResource {
     messageId: string;
     title: string;
+    cloudType: SupportedCloudType;
+    cloudTypeName: string;
     cloudLinks: CloudLink[];
+}
+interface RawCloudResource {
+    messageId?: string;
+    title?: string;
+    cloudType?: string | number;
+    cloudLinks?: CloudLinkInput[];
 }
 
 interface SearchResponse {
     code: number;
     success: boolean;
-    data: {
-        list: CloudResource[];
-    }[];
+    data: unknown;
 }
 
-const SUPPORTED_CLOUD_LINK_PATTERNS = [
-    /cloud\.189\.cn/i,
-    /quark\.cn\/s\//i
-];
+const CLOUD_TYPE_NAMES: Record<SupportedCloudType, string> = {
+    cloud189: '天翼',
+    quark: '夸克'
+};
+
+const SUPPORTED_CLOUD_LINK_PATTERNS: Record<SupportedCloudType, RegExp[]> = {
+    cloud189: [
+        /cloud\.189\.cn/i,
+        /h5\.cloud\.189\.cn/i,
+        /content\.21cn\.com/i
+    ],
+    quark: [
+        /pan\.quark\.cn/i,
+        /drive\.quark\.cn/i,
+        /quark\.cn\/s\//i
+    ]
+};
 
 class CloudSaverSDK {
     private static instance: CloudSaverSDK;
@@ -127,8 +158,80 @@ class CloudSaverSDK {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    private isSupportedCloudLink(link: string): boolean {
-        return SUPPORTED_CLOUD_LINK_PATTERNS.some(pattern => pattern.test(link));
+    private decodeLink(link: string): string {
+        try {
+            return decodeURIComponent(link);
+        } catch (error) {
+            return link;
+        }
+    }
+
+    private detectCloudTypeFromLink(link: string): SupportedCloudType | '' {
+        const text = this.decodeLink(link || '').trim();
+        const cloudTypes = Object.keys(SUPPORTED_CLOUD_LINK_PATTERNS) as SupportedCloudType[];
+        return cloudTypes.find(cloudType =>
+            SUPPORTED_CLOUD_LINK_PATTERNS[cloudType].some(pattern => pattern.test(text))
+        ) || '';
+    }
+
+    private normalizeCloudType(cloudType: unknown, link: string): SupportedCloudType | '' {
+        const linkCloudType = this.detectCloudTypeFromLink(link);
+        if (linkCloudType) {
+            return linkCloudType;
+        }
+
+        if (typeof cloudType !== 'string' && typeof cloudType !== 'number') {
+            return '';
+        }
+
+        const normalizedType = String(cloudType).toLowerCase().replace(/[\s_-]/g, '');
+        if (['cloud189', 'tianyi', '189', 'ctyun'].includes(normalizedType)) {
+            return 'cloud189';
+        }
+        if (normalizedType === 'quark') {
+            return 'quark';
+        }
+
+        return '';
+    }
+
+    private getCloudLinkUrl(cloudLink: CloudLinkInput): string {
+        if (typeof cloudLink === 'string') {
+            return cloudLink.trim();
+        }
+        return (cloudLink.link || cloudLink.url || cloudLink.shareLink || '').trim();
+    }
+
+    private normalizeCloudLinks(resource: RawCloudResource): CloudLink[] {
+        return (resource.cloudLinks || [])
+            .map(cloudLink => {
+                const link = this.getCloudLinkUrl(cloudLink);
+                const rawCloudType = typeof cloudLink === 'string' ? resource.cloudType : cloudLink.cloudType || resource.cloudType;
+                const cloudType = this.normalizeCloudType(rawCloudType, link);
+                if (!link || !cloudType) {
+                    return null;
+                }
+                return {
+                    cloudType,
+                    cloudTypeName: CLOUD_TYPE_NAMES[cloudType],
+                    link
+                };
+            })
+            .filter((cloudLink): cloudLink is CloudLink => !!cloudLink);
+    }
+
+    private getSearchResultGroups(data: SearchResponse): { list: RawCloudResource[] }[] {
+        if (Array.isArray(data.data)) {
+            return data.data as { list: RawCloudResource[] }[];
+        }
+        if (
+            data.data &&
+            typeof data.data === 'object' &&
+            Array.isArray((data.data as { data?: unknown }).data)
+        ) {
+            return (data.data as { data: { list: RawCloudResource[] }[] }).data;
+        }
+        return [];
     }
 
     private async autoLogin(): Promise<boolean> {
@@ -183,29 +286,42 @@ class CloudSaverSDK {
 
             const data = body as SearchResponse;
             if (data.success && data.code === 0) {
-                const resources = data.data
-                .flatMap(item => item.list)
-                .filter(item => 
-                    item.cloudLinks?.length > 0 && 
-                    item.cloudLinks.some(link => this.isSupportedCloudLink(link.link))
-                );
+                const resources = this.getSearchResultGroups(data)
+                .flatMap(item => item.list || [])
+                .map(resource => {
+                    const cloudLinks = this.normalizeCloudLinks(resource);
+                    if (cloudLinks.length === 0) {
+                        return null;
+                    }
+                    const cloudType = cloudLinks[0].cloudType;
+                    return {
+                        messageId: resource.messageId || '',
+                        title: resource.title || '',
+                        cloudType,
+                        cloudTypeName: CLOUD_TYPE_NAMES[cloudType],
+                        cloudLinks
+                    };
+                })
+                .filter((resource): resource is CloudResource => !!resource);
 
                 // 先按资源去重
                 const uniqueResources = new Map<string, CloudResource>();
                 resources.forEach(resource => {
-                    if (!uniqueResources.has(resource.messageId)) {
-                        uniqueResources.set(resource.messageId, resource);
+                    const resourceKey = resource.messageId || `${resource.title}:${resource.cloudLinks.map(link => link.link).join('|')}`;
+                    if (!uniqueResources.has(resourceKey)) {
+                        uniqueResources.set(resourceKey, resource);
                     }
                 });
 
                 // 将每个资源的多个链接拆分为独立资源
                 const result: CloudResource[] = [];
                 uniqueResources.forEach(resource => {
-                    const cloudLinks = resource.cloudLinks.filter(link => this.isSupportedCloudLink(link.link));
-                    cloudLinks.forEach(cloudLink => {
+                    resource.cloudLinks.forEach(cloudLink => {
                         result.push({
                             messageId: resource.messageId,
                             title: resource.title,
+                            cloudType: cloudLink.cloudType,
+                            cloudTypeName: cloudLink.cloudTypeName,
                             cloudLinks: [cloudLink]
                         });
                     });
