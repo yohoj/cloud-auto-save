@@ -127,9 +127,10 @@ class FolderSelector {
                                     <span aria-hidden="true">+</span> 新建文件夹
                                 </button>
                             ` : ''}
-                            <a href="javascript:;" class="refresh-link" data-action="refresh">
-                                <span class="refresh-icon">🔄</span> 刷新
-                            </a>
+                            <button type="button" class="btn-default btn-small folder-refresh-btn refresh-link" data-action="refresh">
+                                <img src="/icons/refresh.svg" alt="" class="refresh-icon">
+                                刷新
+                            </button>
                         </div>
                     </div>
                     <div class="form-body">

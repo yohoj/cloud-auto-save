@@ -17,8 +17,18 @@
     justify-content: flex-end;
 }
 
-.folder-create-btn {
+.folder-create-btn,
+.folder-refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
     margin-left: 0;
+}
+
+.folder-refresh-btn .refresh-icon {
+    width: 16px;
+    height: 16px;
+    filter: invert(0.5);
 }
 
 .folder-tree-item {
