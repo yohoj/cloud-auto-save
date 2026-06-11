@@ -296,12 +296,12 @@ function initTaskForm() {
             return;
         }
         // 获取选中的分享目录
-        const selectedFolders = Array.from(document.querySelectorAll('input[name="chooseShareFolder"]:checked'))
-        .map(cb => cb.value);
-        if (selectedFolders.length == 0) {
-            message.warning('至少选择一个分享目录');
+        const selectedShareFolder = document.querySelector('input[name="chooseShareFolder"]:checked');
+        if (!selectedShareFolder) {
+            message.warning('请选择一个分享目录');
             return;
         }
+        const selectedFolders = [selectedShareFolder.value];
         const body = { accountId, shareLink, totalEpisodes, targetFolderId, accessCode, matchPattern, matchOperator, matchValue, overwriteFolder: 0, remark, enableCron, cronExpression, targetFolder, selectedFolders, sourceRegex, targetRegex, taskName, enableTaskScraper };
         await createTask(e,body)
             
@@ -351,13 +351,6 @@ function initTaskForm() {
                     tasksTab.click();
                 }
             } else {
-                if (data.error == 'folder already exists') {
-                    if (confirm('该目录已经存在, 确定要覆盖吗?')) {
-                        body.overwriteFolder = 1
-                        await createTask(e,body)
-                    }
-                    return
-                }
                 message.warning('任务创建失败: ' + data.error);
             }
         } catch (error) {
@@ -980,10 +973,10 @@ async function parseShareLink() {
         const data = await response.json();
         if (data.success) {
             shareFoldersGroup.style.display = 'block';
-            shareFoldersList.innerHTML = data.data.map(folder => `
+            shareFoldersList.innerHTML = data.data.map((folder, index) => `
                 <div class="folder-item">
                     <label>
-                        <input type="checkbox" name="chooseShareFolder" value="${escapeHtml(folder.id)}" checked>
+                        <input type="radio" name="chooseShareFolder" value="${escapeHtml(folder.id)}" ${index === 0 ? 'checked' : ''}>
                         ${escapeHtml(folder.name)}
                     </label>
                 </div>
@@ -1008,13 +1001,6 @@ async function parseShareLink() {
         shareParseError.textContent = `操作失败: ${error.message}`;
     }
 }
-
-// 全选/取消全选处理
-document.getElementById('selectAllFolders').addEventListener('change', function(e) {
-    const checkboxes = document.querySelectorAll('input[name="chooseShareFolder"]');
-    checkboxes.forEach(cb => cb.checked = e.target.checked);
-});
-
 
 // 复制直链到剪贴板
 async function copyDirectLink(fileId, taskId) {

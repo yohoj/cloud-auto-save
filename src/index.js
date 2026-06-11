@@ -780,6 +780,63 @@ AppDataSource.initialize().then(async () => {
         }
     });
 
+    // 新建目录
+    app.post('/api/folders/:accountId', async (req, res) => {
+        try {
+            const accountId = parseInt(req.params.accountId);
+            let parentFolderId = req.body.parentFolderId || '-11';
+            const folderName = (req.body.folderName || '').trim();
+            if (!folderName) {
+                throw new Error('文件夹名称不能为空');
+            }
+            if (/[\\/:*?"<>|]/.test(folderName)) {
+                throw new Error('文件夹名称不能包含特殊字符');
+            }
+
+            const account = await accountRepo.findOneBy({ id: accountId });
+            if (!account) {
+                throw new Error('账号不存在');
+            }
+
+            const cloud189 = CloudUtils.getService(account);
+            if (CloudUtils.isQuarkAccount(account) && parentFolderId === '-11') {
+                parentFolderId = '0';
+            }
+            const folder = await cloud189.createFolder(folderName, parentFolderId);
+            if (!folder?.id) {
+                throw new Error(folder?.res_msg || folder?.message || '创建目录失败');
+            }
+            let confirmedFolder = null;
+            for (let attempt = 0; attempt < 5; attempt++) {
+                if (attempt > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+                const folderInfo = await cloud189.listFiles(parentFolderId);
+                const folderList = folderInfo?.fileListAO?.folderList || [];
+                confirmedFolder = folderList.find(item => String(item.id) === String(folder.id))
+                    || folderList.find(item => item.name === (folder.name || folderName));
+                if (confirmedFolder) {
+                    break;
+                }
+            }
+            if (!confirmedFolder) {
+                throw new Error('创建请求已提交，但未确认目录已创建，请稍后刷新目录确认');
+            }
+            folderCache.clearPrefix(`folders_${accountId}_`);
+            res.json({
+                success: true,
+                data: {
+                    id: confirmedFolder.id,
+                    name: confirmedFolder.name || folder.name || folderName,
+                    isParent: true,
+                    pId: parentFolderId
+                }
+            });
+        } catch (error) {
+            res.json({ success: false, error: error.message });
+        }
+    });
+
     // 根据分享链接获取文件目录
     app.get('/api/share/folders/:accountId', async (req, res) => {
         try {

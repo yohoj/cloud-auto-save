@@ -4,9 +4,11 @@ class FolderSelector {
         this.onSelect = options.onSelect || (() => {});
         this.accountId = options.accountId || '';
         this.selectedNode = null;
+        this.selectedElement = null;
         this.modalId = 'folderModal_' + Math.random().toString(36).substr(2, 9);
         this.treeId = 'folderTree_' + Math.random().toString(36).substr(2, 9);
         this.enableFavorites = options.enableFavorites || false; // 是否启用常用目录功能
+        this.enableCreateFolder = options.enableCreateFolder ?? ((options.apiUrl || '/api/folders') === '/api/folders');
         this.favoritesKey = options.favoritesKey || 'defaultFavoriteDirectories'; // 常用目录缓存key
         this.isShowingFavorites = false;
         this.currentPath = []; 
@@ -119,9 +121,16 @@ class FolderSelector {
                 <div class="modal-content">
                     <div class="modal-header">
                         <h3 class="modal-title">${this.title}</h3>
-                        <a href="javascript:;" class="refresh-link" data-action="refresh">
-                            <span class="refresh-icon">🔄</span> 刷新
-                        </a>
+                        <div class="folder-header-actions">
+                            ${this.enableCreateFolder ? `
+                                <button type="button" class="btn-default btn-small folder-create-btn" data-action="create-folder">
+                                    <span aria-hidden="true">+</span> 新建文件夹
+                                </button>
+                            ` : ''}
+                            <a href="javascript:;" class="refresh-link" data-action="refresh">
+                                <span class="refresh-icon">🔄</span> 刷新
+                            </a>
+                        </div>
                     </div>
                     <div class="form-body">
                         <div id="${this.treeId}" class="folder-tree"></div>
@@ -151,6 +160,10 @@ class FolderSelector {
         });
         // 添加刷新事件监听
         this.modal.querySelector('[data-action="refresh"]').addEventListener('click', () => this.refreshTree());
+        const createFolderBtn = this.modal.querySelector('[data-action="create-folder"]');
+        if (createFolderBtn) {
+            createFolderBtn.addEventListener('click', () => this.createFolder());
+        }
         this.buttons.forEach(btn => {
             const button = this.modal.querySelector(`[data-action="${btn.action}"]`);
             if (button && this.buttonCallbacks[btn.action]) {
@@ -164,6 +177,8 @@ class FolderSelector {
         const refreshLink = this.modal.querySelector('.refresh-link');
         refreshLink.classList.add('loading');
         this.currentPath = []; 
+        this.selectedNode = null;
+        this.selectedElement = null;
         try {
             if (this.isShowingFavorites) {
                 await this.loadFolderNodes(null, this.folderTree, false);
@@ -189,9 +204,11 @@ class FolderSelector {
         // 设置z-index
         this.modal.style.zIndex = 1001;
         this.selectedNode = null;
+        this.selectedElement = null;
         this.isShowingFavorites = false;
         this.favorites =  await this.getFavorites()
         this.modal.querySelector('.modal-title').textContent = this.title;
+        this.setCreateFolderVisible(true);
         await this.loadFolderNodes('-11');
     }
 
@@ -239,7 +256,7 @@ class FolderSelector {
                 }
                 nodes = this.apiConfig.parseResponse(data);
             }
-            this.renderFolderNodes(nodes, parentElement);
+            await this.renderFolderNodes(nodes, parentElement);
         } catch (error) {
             console.error('加载目录失败:', error);
             message.warning('加载目录失败');
@@ -252,6 +269,7 @@ class FolderSelector {
         nodes.forEach(node => {
             const item = document.createElement('div');
             item.className = 'folder-tree-item';
+            item.dataset.folderId = String(node.id);
             // 常用目录视图不显示展开图标和复选框 是否允许点击
             const expandIcon = (this.isShowingFavorites || node.isFile) ? '' : '<span class="expand-icon">▶</span>';
             const isFavorite = favorites.some(f => f.id === node.id);
@@ -318,10 +336,127 @@ class FolderSelector {
             }
         }
         this.selectedNode = node;
+        this.selectedElement = element;
         element.classList.add('selected');
 
         // 更新当前路径
         this.updatePath(element);
+    }
+
+    setCreateFolderVisible(visible) {
+        const createFolderBtn = this.modal?.querySelector('[data-action="create-folder"]');
+        if (createFolderBtn) {
+            createFolderBtn.style.display = visible && this.enableCreateFolder ? '' : 'none';
+        }
+    }
+
+    async createFolder() {
+        if (!this.enableCreateFolder) return;
+        const rawName = prompt('请输入新文件夹名称');
+        if (rawName === null) return;
+
+        const folderName = rawName.trim();
+        if (!folderName) {
+            message.warning('文件夹名称不能为空');
+            return;
+        }
+        if (/[\\/:*?"<>|]/.test(folderName)) {
+            message.warning('文件夹名称不能包含特殊字符');
+            return;
+        }
+
+        const parentNode = this.selectedNode && !this.selectedNode.isFile ? this.selectedNode : null;
+        const parentElement = parentNode ? this.selectedElement : null;
+        const parentFolderId = parentNode?.id || '-11';
+        const createFolderBtn = this.modal.querySelector('[data-action="create-folder"]');
+
+        try {
+            createFolderBtn?.classList.add('loading');
+            if (createFolderBtn) createFolderBtn.disabled = true;
+
+            const response = await fetch(`/api/folders/${this.accountId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ parentFolderId, folderName })
+            });
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || '新建文件夹失败');
+            }
+
+            const newFolder = data.data;
+            if (this.isShowingFavorites) {
+                await this.addCreatedFolderToFavorites(newFolder, parentNode);
+            } else {
+                await this.reloadCreatedFolder(parentFolderId, parentElement, newFolder);
+            }
+            message.success('文件夹创建成功');
+        } catch (error) {
+            message.warning('新建文件夹失败: ' + error.message);
+        } finally {
+            createFolderBtn?.classList.remove('loading');
+            if (createFolderBtn) createFolderBtn.disabled = false;
+        }
+    }
+
+    async addCreatedFolderToFavorites(newFolder, parentNode) {
+        const favorites = await this.getFavorites();
+        const parentPath = parentNode?.path || '';
+        const folderPath = [parentPath, newFolder.name].filter(Boolean).join('/');
+        const favoriteNode = {
+            id: newFolder.id,
+            name: newFolder.name,
+            path: folderPath
+        };
+        if (!favorites.some(folder => folder.id === newFolder.id)) {
+            favorites.push(favoriteNode);
+            this.saveFavorites(favorites);
+        }
+        this.favorites = favorites;
+        await this.loadFolderNodes(null, this.folderTree, false);
+
+        const createdElement = Array.from(this.folderTree.querySelectorAll('.folder-tree-item'))
+            .find(item => item.dataset.folderId === String(newFolder.id));
+        if (createdElement) {
+            this.selectFolder(favoriteNode, createdElement);
+        } else {
+            this.selectedNode = favoriteNode;
+            this.selectedElement = null;
+            this.currentPath = [folderPath];
+        }
+    }
+
+    async reloadCreatedFolder(parentFolderId, parentElement, newFolder) {
+        let targetContainer = this.folderTree;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            if (attempt > 0) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            if (parentElement) {
+                let children = parentElement.querySelector(':scope > .folder-children');
+                if (!children) {
+                    children = document.createElement('div');
+                    children.className = 'folder-children';
+                    parentElement.appendChild(children);
+                }
+                await this.loadFolderNodes(parentFolderId, children, true);
+                parentElement.classList.add('expanded');
+                targetContainer = children;
+            } else {
+                await this.loadFolderNodes('-11', this.folderTree, true);
+            }
+
+            const createdElement = Array.from(targetContainer.querySelectorAll('.folder-tree-item'))
+                .find(item => item.dataset.folderId === String(newFolder.id));
+            if (createdElement) {
+                this.selectFolder(newFolder, createdElement);
+                return;
+            }
+        }
+
+        this.selectedNode = newFolder;
+        this.selectedElement = null;
+        this.currentPath = parentElement ? [...this.currentPath, newFolder.name] : [newFolder.name];
     }
 
     updatePath(element) {
@@ -352,8 +487,10 @@ class FolderSelector {
         this.modal.style.display = 'block';
         this.modal.style.zIndex = 1001;
         this.selectedNode = null;
+        this.selectedElement = null;
         this.isShowingFavorites = true;
         this.modal.querySelector('.modal-title').textContent = '常用目录';
+        this.setCreateFolderVisible(true);
         this.loadFolderNodes(null, this.folderTree, false, true);
     }
 }

@@ -75,105 +75,67 @@ class TaskService {
         };
     }
 
-     // 验证并创建目标目录
-     async _validateAndCreateTargetFolder(cloud189, taskDto, shareInfo) {
-        if (!this.checkFolderInList(taskDto, '-1')) {
-            return {id: taskDto.targetFolderId, name: '', oldFolder: true}
+     // 验证用户选择的保存目录
+     async _validateAndCreateTargetFolder(cloud189, taskDto) {
+        const folderInfo = await cloud189.listFiles(taskDto.targetFolderId);
+        if (!folderInfo || folderInfo.res_code === "FileNotFound") {
+            throw new Error('保存目录不存在');
         }
-        // 检查目标文件夹是否存在
-        await this.checkFolderExists(cloud189, taskDto.targetFolderId, shareInfo.fileName, taskDto.overwriteFolder);
-        const targetFolder = await cloud189.createFolder(shareInfo.fileName, taskDto.targetFolderId);
-        if (!targetFolder || !targetFolder.id) throw new Error('创建目录失败');
-        return targetFolder;
+        return {id: taskDto.targetFolderId, name: taskDto.targetFolder || ''};
+    }
+
+    _getSelectedShareFolder(taskDto, shareInfo, shareDir) {
+        const selectedFolders = Array.isArray(taskDto.selectedFolders)
+            ? taskDto.selectedFolders.filter(Boolean)
+            : [];
+
+        if (!taskDto.tgbot && selectedFolders.length > 1) {
+            throw new Error('只能选择一个分享目录');
+        }
+
+        const selectedFolderId = selectedFolders[0] || '-1';
+        if (String(selectedFolderId) === '-1' || String(selectedFolderId) === String(shareInfo.fileId)) {
+            return { id: shareInfo.fileId, name: '' };
+        }
+
+        const subFolders = shareDir?.fileListAO?.folderList || [];
+        const selectedFolder = subFolders.find(folder => String(folder.id) === String(selectedFolderId));
+        if (!selectedFolder) {
+            throw new Error('选择的分享目录不存在');
+        }
+        return { id: selectedFolder.id, name: selectedFolder.name };
     }
 
     // 处理文件夹分享
-    async _handleFolderShare(cloud189, shareInfo, taskDto, rootFolder, tasks) {
+    async _handleFolderShare(cloud189, shareInfo, taskDto, targetFolder, tasks) {
         const result = await cloud189.listShareDir(shareInfo.shareId, shareInfo.fileId, shareInfo.shareMode, taskDto.accessCode);
-        if (!result?.fileListAO) return;
-        const { fileList: rootFiles = [], folderList: subFolders = [] } = result.fileListAO;
-        // 处理根目录文件 如果用户选择了根目录, 则生成根目录任务
-        if (rootFiles.length > 0 && !rootFolder?.oldFolder) {
-            const enableOnlySaveMedia = ConfigService.getConfigValue('task.enableOnlySaveMedia');
-            // mediaSuffixs转为小写
-            const mediaSuffixs = ConfigService.getConfigValue('task.mediaSuffix').split(';').map(suffix => suffix.toLowerCase())
-            // 校验文件是否一个满足条件的都没有, 如果都没有 直接跳过
-            let shouldContinue = false;
-            if (enableOnlySaveMedia && !rootFiles.some(file => this._checkFileSuffix(file, true, mediaSuffixs))) {
-                shouldContinue = true
-            }
-            if (!shouldContinue) {
-                taskDto.realRootFolderId = rootFolder.id;
-                const rootTask = this.taskRepo.create(
-                    this._createTaskConfig(
-                        taskDto,
-                        shareInfo, rootFolder, `${shareInfo.fileName}(根)`, 0
-                    )
-                );
-                tasks.push(await this.taskRepo.save(rootTask));
-            }
-        }
-        if (subFolders.length > 0) {
-            taskDto.realRootFolderId = rootFolder.id;
-            // 如果启用了 AI 分析，分析子文件夹
-            if (AIService.isEnabled() && subFolders.length > 0) {
-                try {
-                    const resourceInfo = await this._analyzeResourceInfo(
-                        shareInfo.fileName,
-                        subFolders.map(f => ({ id:f.id, name: f.name })),
-                        'folder'
-                    );
-                    // 遍历子文件夹，使用 AI 分析结果更新文件夹名称
-                    for (const folder of subFolders) {
-                        // 在 AI 分析结果中查找对应的文件夹
-                        const aiFolder = resourceInfo.folders.find(f => f.id === folder.id);
-                        if (aiFolder) {
-                            folder.name = aiFolder.name;
-                        }
-                    }
-                } catch (error) {
-                    logTaskEvent('子文件夹 AI 分析失败，使用原始文件名: ' + error.message);
-                }
-            }
-             // 处理子文件夹
-            for (const folder of subFolders) {
-                // 检查用户是否选择了该文件夹
-                if (!this.checkFolderInList(taskDto, folder.id)) {
-                    continue;
-                }
-                const subFolderContent = await cloud189.listShareDir(shareInfo.shareId, folder.id, shareInfo.shareMode, taskDto.accessCode);
-                const hasFiles = subFolderContent?.fileListAO?.fileList?.length > 0;
-                if (!hasFiles) {
-                    logTaskEvent(`子文件夹 "${folder.name}" (ID: ${folder.id}) 为空，跳过目录。`);
-                    continue; // 跳到下一个子文件夹
-                }
-                let realFolder;
-                // 检查目标文件夹是否存在
-                await this.checkFolderExists(cloud189, rootFolder.id, folder.fileName, taskDto.overwriteFolder);
-                realFolder = await cloud189.createFolder(folder.name, rootFolder.id);
-                if (!realFolder?.id) throw new Error('创建目录失败');
-                rootFolder?.oldFolder && (taskDto.realRootFolderId = realFolder.id);
-                realFolder.name = path.join(rootFolder.name, realFolder.name);
-                const subTask = this.taskRepo.create(
-                    this._createTaskConfig(
-                        taskDto,
-                        shareInfo, realFolder, shareInfo.fileName, 0, folder.id, folder.name
-                    )
-                );
-                tasks.push(await this.taskRepo.save(subTask));
-            }
-        }
-    }
+        if (!result?.fileListAO) throw new Error('获取分享目录失败');
 
-    // 处理单文件分享
-    async _handleSingleShare(cloud189, shareInfo, taskDto, rootFolder, tasks) {
-        const shareFiles = await cloud189.getShareFiles(shareInfo.shareId, shareInfo.fileId, shareInfo.shareMode, taskDto.accessCode, false);
-        if (!shareFiles?.length) throw new Error('获取文件列表失败');
-        taskDto.realRootFolderId = rootFolder.id;
+        const selectedFolder = this._getSelectedShareFolder(taskDto, shareInfo, result);
+        taskDto.realRootFolderId = targetFolder.id;
         const task = this.taskRepo.create(
             this._createTaskConfig(
                 taskDto,
-                shareInfo, rootFolder, shareInfo.fileName, 0
+                shareInfo,
+                targetFolder,
+                shareInfo.fileName,
+                0,
+                selectedFolder.id,
+                selectedFolder.name
+            )
+        );
+        tasks.push(await this.taskRepo.save(task));
+    }
+
+    // 处理单文件分享
+    async _handleSingleShare(cloud189, shareInfo, taskDto, targetFolder, tasks) {
+        const shareFiles = await cloud189.getShareFiles(shareInfo.shareId, shareInfo.fileId, shareInfo.shareMode, taskDto.accessCode, false);
+        if (!shareFiles?.length) throw new Error('获取文件列表失败');
+        taskDto.realRootFolderId = targetFolder.id;
+        const task = this.taskRepo.create(
+            this._createTaskConfig(
+                taskDto,
+                shareInfo, targetFolder, shareInfo.fileName, 0
             )
         );
         tasks.push(await this.taskRepo.save(task));
@@ -251,18 +213,17 @@ class TaskService {
         }
         taskDto.isFolder = true
         await this.increaseShareFileAccessCount(cloud189, shareInfo.shareId)
-        // 检查并创建目标目录
-        const rootFolder = await this._validateAndCreateTargetFolder(cloud189, taskDto, shareInfo);
+        // 检查用户选择的保存目录
+        const targetFolder = await this._validateAndCreateTargetFolder(cloud189, taskDto, shareInfo);
         const tasks = [];
-        rootFolder.name = path.join(taskDto.targetFolder, rootFolder.name)
         if (shareInfo.isFolder) {
-            await this._handleFolderShare(cloud189, shareInfo, taskDto, rootFolder, tasks);
+            await this._handleFolderShare(cloud189, shareInfo, taskDto, targetFolder, tasks);
         }
 
          // 处理单文件
          if (!shareInfo.isFolder) {
             taskDto.isFolder = false
-            await this._handleSingleShare(cloud189, shareInfo, taskDto, rootFolder, tasks);
+            await this._handleSingleShare(cloud189, shareInfo, taskDto, targetFolder, tasks);
         }
         if (taskDto.enableCron) {
             for(const task of tasks) {
@@ -1142,6 +1103,10 @@ class TaskService {
     }
     // 根据realRootFolderId获取根目录
     async getRootFolder(task) {
+        if (task.realFolderId === task.targetFolderId && task.realRootFolderId === task.targetFolderId) {
+            logTaskEvent(`任务[${task.resourceName}]直接保存到用户选择目录，删除任务时跳过删除保存目录`);
+            return null;
+        }
         if (task.realRootFolderId) {
             // 判断realRootFolderId下是否还有其他目录, 通过任务查询 查询realRootFolderId是否有多个任务, 如果存在多个 则使用realFolderId
             const tasks = await this.taskRepo.find({
@@ -1256,7 +1221,7 @@ class TaskService {
         }
     }
 
-    // 根据分享链接获取文件目录组合 资源名 资源名/子目录1 资源名/子目录2
+    // 根据分享链接获取可选择的分享目录
     async parseShareFolderByShareLink(shareLink, accountId, accessCode) {
         const account = await this._getAccountById(accountId)
         if (!account) {
@@ -1281,8 +1246,7 @@ class TaskService {
             shareInfo.shareId = accessCodeResponse.shareId;
         }
         const folders = []
-        // 根目录为分享链接的名称
-        folders.push({id: -1 ,name: shareInfo.fileName})
+        folders.push({id: shareInfo.fileId, name: shareInfo.fileName})
         if (!shareInfo.isFolder) {
             return folders;
         }
@@ -1294,30 +1258,6 @@ class TaskService {
             folders.push({id: folder.id, name: path.join(shareInfo.fileName, folder.name)});
         });
         return folders;
-    }
-
-    // 校验目录是否在目录列表中
-    checkFolderInList(taskDto, folderId) {
-        return (!taskDto.selectedFolders || taskDto.selectedFolders.length === 0) || taskDto.tgbot || (taskDto.selectedFolders?.includes(folderId) || false);
-    }
-
-    // 校验云盘中是否存在同名目录
-    async checkFolderExists(cloud189, targetFolderId, folderName, overwriteFolder = false) {
-        const folderInfo = await cloud189.listFiles(targetFolderId);
-        if (!folderInfo) {
-            throw new Error('获取文件列表失败');
-        }
-
-        // 检查目标文件夹是否存在
-        const { folderList = [] } = folderInfo.fileListAO;
-        const existFolder = folderList.find(folder => folder.name === folderName);
-        if (existFolder) {
-            if (!overwriteFolder) {
-                throw new Error('folder already exists');
-            }
-            // 如果用户需要覆盖, 则删除目标目录
-            await this.deleteCloudFile(cloud189, existFolder, 1)
-        }
     }
 
     // 根据id获取任务

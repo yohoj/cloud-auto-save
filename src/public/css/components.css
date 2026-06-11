@@ -441,7 +441,8 @@
 }
 
 .folder-select-header input[type="checkbox"],
-.folder-item input[type="checkbox"] {
+.folder-item input[type="checkbox"],
+.folder-item input[name="chooseShareFolder"] {
     width: 16px;
     height: 16px;
     flex: none;
@@ -492,7 +493,8 @@
     min-width: min-content;
 }
 
-.folder-item input[type="checkbox"] {
+.folder-item input[type="checkbox"],
+.folder-item input[name="chooseShareFolder"] {
     margin: 0;
     width: 16px;
     height: 16px;

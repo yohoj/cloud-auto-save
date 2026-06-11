@@ -9,6 +9,18 @@
     min-width: 200px;  /* 设置最小宽度 */
 }
 
+.folder-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.folder-create-btn {
+    margin-left: 0;
+}
+
 .folder-tree-item {
     padding: 8px 12px;
     cursor: pointer;
