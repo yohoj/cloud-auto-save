@@ -645,6 +645,9 @@ class TelegramBotService {
     }
 
     async handleFolderSelection(chatId, shareLink, messageId = null,accessCode) {
+        if (!await this._ensureAccountForShareLink(chatId, shareLink)) {
+            return;
+        }
         const folders = await this.commonFolderRepo.find({ where: { accountId: this.currentAccountId } });
         
         if (folders.length === 0) {
@@ -773,6 +776,38 @@ class TelegramBotService {
                 return;
             }
         }
+    }
+
+    async _ensureAccountForShareLink(chatId, shareLink) {
+        const shareCloudType = CloudUtils.getShareLinkCloudType(shareLink);
+        if (!shareCloudType) {
+            return this._checkUserId(chatId);
+        }
+
+        const currentCloudType = this.currentAccount
+            ? (CloudUtils.isQuarkAccount(this.currentAccount) ? 'quark' : 'cloud189')
+            : '';
+        if (this.currentAccountId && currentCloudType === shareCloudType) {
+            return true;
+        }
+
+        const accounts = await this.accountRepo.find();
+        const account = accounts.find(account => {
+            const accountCloudType = CloudUtils.isQuarkAccount(account) ? 'quark' : 'cloud189';
+            return accountCloudType === shareCloudType;
+        });
+        const cloudTypeName = shareCloudType === 'quark' ? '夸克网盘' : '天翼云盘';
+        if (!account) {
+            await this.bot.sendMessage(chatId, `未找到${cloudTypeName}账号，请先添加${cloudTypeName}账号`);
+            return false;
+        }
+
+        this.currentAccount = account;
+        this.currentAccountId = account.id;
+        account.tgBotActive = true;
+        await this.accountRepo.save(account);
+        await this.bot.sendMessage(chatId, `已自动切换到${cloudTypeName}账号: ${this._getDesensitizedUserName()}`);
+        return true;
     }
 
     async deleteTask(chatId,data,messageId) {

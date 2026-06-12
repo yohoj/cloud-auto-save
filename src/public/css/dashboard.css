@@ -115,10 +115,8 @@ body::before {
 .brand-mark::before {
     content: "";
     position: absolute;
-    inset: 12px;
-    background: var(--accent);
-    -webkit-mask: url("/favicon/favicon.svg") center / contain no-repeat;
-    mask: url("/favicon/favicon.svg") center / contain no-repeat;
+    inset: 5px;
+    background: url("/favicon/favicon.svg") center / contain no-repeat;
 }
 
 .header-title {

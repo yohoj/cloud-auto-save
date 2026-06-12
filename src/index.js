@@ -927,10 +927,10 @@ AppDataSource.initialize().then(async () => {
             }else{
                 if (strmEnabled){
                     // 删除对应的本地STRM文件
-                    const oldFile = path.join(strmService.getTaskLocalRelativePath(task), file.oldName);
+                    const oldFile = path.join(strmService.getTaskLocalRelativePath(task), file.relativeDir || '', file.oldName);
                     await strmService.delete(oldFile)
                 }
-                successFiles.push({id: file.fileId, name: file.destFileName})
+                successFiles.push({id: file.fileId, name: file.destFileName, relativeDir: file.relativeDir || ''})
             }
         }
         // 重新生成STRM文件

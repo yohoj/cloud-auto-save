@@ -366,6 +366,16 @@ function initTaskForm() {
 
 
 var chooseTask = undefined
+
+function getSelectedFileItems() {
+    return Array.from(document.querySelectorAll('.file-checkbox:checked')).map(cb => ({
+        id: cb.dataset.id,
+        name: cb.dataset.filename,
+        displayName: cb.dataset.displayName || cb.dataset.filename,
+        relativeDir: cb.dataset.relativeDir || ''
+    }));
+}
+
 // 文件列表弹窗
 async function showFileListModal(taskId) {
     chooseTask = getTaskById(taskId);
@@ -413,12 +423,19 @@ async function showFileListModal(taskId) {
         if (data.success) {
             const tbody = document.getElementById('fileListBody');
             data.data.forEach(file => {
+                const fileName = file.name || file.fileName || '';
+                const displayName = file.displayName || file.relativePath || fileName;
+                const relativeDir = file.relativeDir || '';
+                const safeFileName = escapeHtml(fileName);
+                const safeDisplayName = escapeHtml(displayName);
+                const safeRelativeDir = escapeHtml(relativeDir);
+                const safeFileId = escapeHtml(file.id);
                 tbody.innerHTML += `
                     <tr>
-                        <td><input type="checkbox" class="file-checkbox" data-filename="${file.name}" data-id="${file.id}"></td>
-                        <td>${file.name}</td>
+                        <td><input type="checkbox" class="file-checkbox" data-filename="${safeFileName}" data-display-name="${safeDisplayName}" data-relative-dir="${safeRelativeDir}" data-id="${safeFileId}"></td>
+                        <td title="${safeDisplayName}">${safeDisplayName}</td>
                         <td>${formatFileSize(file.size)}</td>
-                        <td>${file.lastOpTime}</td>
+                        <td>${escapeHtml(file.lastOpTime || '')}</td>
                     </tr>
                 `;
             });
@@ -433,7 +450,7 @@ async function showFileListModal(taskId) {
 function showBatchRenameOptions() {
     const sourceRegex = escapeHtmlAttr(chooseTask.sourceRegex)?? ''
     const targetRegex = escapeHtmlAttr(chooseTask.targetRegex)?? ''
-    const selectedFiles = Array.from(document.querySelectorAll('.file-checkbox:checked')).map(cb => cb.dataset.filename);
+    const selectedFiles = getSelectedFileItems();
     if (selectedFiles.length === 0) {
         message.warning('请选择要重命名的文件');
         return;
@@ -512,7 +529,7 @@ function showBatchRenameOptions() {
 
 // 预览重命名
 async function previewRename(autoUpdate = false) {
-    const selectedFiles = Array.from(document.querySelectorAll('.file-checkbox:checked')).map(cb => cb.dataset.filename);
+    const selectedFiles = getSelectedFileItems();
     const renameType = document.querySelector('input[name="renameType"]:checked').value;
     let newNames = [];
 
@@ -520,14 +537,15 @@ async function previewRename(autoUpdate = false) {
         const sourceRegex = escapeRegExp(document.getElementById('sourceRegex').value);
         const targetRegex = escapeRegExp(document.getElementById('targetRegex').value);
         newNames = selectedFiles
-            .map(filename => {
-                const checkbox = document.querySelector(`.file-checkbox[data-filename="${filename}"]`);
+            .map(file => {
                 try {
-                    const destFileName = filename.replace(new RegExp(sourceRegex), targetRegex);
+                    const destFileName = file.name.replace(new RegExp(sourceRegex), targetRegex);
                     // 如果文件名没有变化，说明没有匹配成功
-                    return destFileName !== filename ? {
-                        fileId: checkbox.dataset.id,
-                        oldName: filename,
+                    return destFileName !== file.name ? {
+                        fileId: file.id,
+                        oldName: file.name,
+                        oldDisplayName: file.displayName,
+                        relativeDir: file.relativeDir,
                         destFileName
                     } : null;
                 } catch (e) {
@@ -540,13 +558,14 @@ async function previewRename(autoUpdate = false) {
         const startNum = parseInt(document.getElementById('startNumber').value);
         const padLength = document.getElementById('startNumber').value.length;
         
-        newNames = selectedFiles.map((filename, index) => {
-            const checkbox = document.querySelector(`.file-checkbox[data-filename="${filename}"]`);
-            const ext = filename.split('.').pop();
+        newNames = selectedFiles.map((file, index) => {
+            const ext = file.name.split('.').pop();
             const num = (startNum + index).toString().padStart(padLength, '0');
             return {
-                fileId: checkbox.dataset.id,
-                oldName: filename,
+                fileId: file.id,
+                oldName: file.name,
+                oldDisplayName: file.displayName,
+                relativeDir: file.relativeDir,
                 destFileName: `${nameFormat}${num}.${ext}`
             };
         });
@@ -572,12 +591,18 @@ function showRenamePreview(newNames, autoUpdate) {
                         </tr>
                     </thead>
                     <tbody>
-                        ${newNames.map(file => `
-                            <tr data-file-id="${file.fileId}">
-                                <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${file.oldName}</td>
-                                <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${file.destFileName}</td>
+                        ${newNames.map(file => {
+                            const safeFileId = escapeHtml(file.fileId);
+                            const safeRelativeDir = escapeHtml(file.relativeDir || '');
+                            const safeOldName = escapeHtml(file.oldName || '');
+                            const safeOldDisplayName = escapeHtml(file.oldDisplayName || file.displayName || file.oldName || '');
+                            const safeDestFileName = escapeHtml(file.destFileName || '');
+                            return `
+                            <tr data-file-id="${safeFileId}" data-relative-dir="${safeRelativeDir}" data-old-name="${safeOldName}">
+                                <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${safeOldDisplayName}">${safeOldDisplayName}</td>
+                                <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${safeDestFileName}">${safeDestFileName}</td>
                             </tr>
-                        `).join('')}
+                        `}).join('')}
                     </tbody>
                 </table>
             </div>
@@ -594,7 +619,8 @@ function showRenamePreview(newNames, autoUpdate) {
 async function submitRename(autoUpdate) {
     const files = Array.from(document.querySelectorAll('.preview-rename-modal tr[data-file-id]')).map(row => ({
         fileId: row.dataset.fileId,
-        oldName: row.querySelector('td:first-child').textContent,
+        oldName: row.dataset.oldName || row.querySelector('td:first-child').textContent,
+        relativeDir: row.dataset.relativeDir || '',
         destFileName: row.querySelector('td:last-child').textContent
     }));
     if (files.length == 0) {
@@ -646,7 +672,7 @@ async function submitRename(autoUpdate) {
 
 // 显示AI重命名选项
 async function showAIRenameOptions() {
-    const selectedFiles = Array.from(document.querySelectorAll('.file-checkbox:checked')).map(cb => cb.dataset.filename);
+    const selectedFiles = getSelectedFileItems();
     if (selectedFiles.length === 0) {
         message.warning('请选择要重命名的文件');
         return;
@@ -666,7 +692,7 @@ async function showAIRenameOptions() {
                 <div class="rename-preview">
                     <h4>选中的文件：</h4>
                     <ul>
-                        ${selectedFiles.map(file => `<li>${file}</li>`).join('')}
+                        ${selectedFiles.map(file => `<li>${escapeHtml(file.displayName)}</li>`).join('')}
                     </ul>
                 </div>
             </div>
@@ -685,7 +711,9 @@ async function executeAIRename() {
     const selectedFiles = Array.from(document.querySelectorAll('.file-checkbox:checked'));
     const fileIds = selectedFiles.map(cb => ({
         id: cb.dataset.id,
-        name: cb.dataset.filename
+        name: cb.dataset.filename,
+        displayName: cb.dataset.displayName || cb.dataset.filename,
+        relativeDir: cb.dataset.relativeDir || ''
     }));
 
     try {
@@ -1077,7 +1105,7 @@ function parseCloudShare(shareText) {
     };
 }
 async function deleteTaskFiles() {
-    const selectedFiles = Array.from(document.querySelectorAll('.file-checkbox:checked')).map(cb => ({id: cb.dataset.id, name: cb.dataset.filename}));
+    const selectedFiles = getSelectedFileItems().map(file => ({id: file.id, name: file.name, relativeDir: file.relativeDir}));
     if (selectedFiles.length === 0) {
         message.warning('请选择要删除的文件');
         return;

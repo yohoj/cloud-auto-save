@@ -5,6 +5,15 @@ const alistService = {
     Enable() {
         return ConfigService.getConfigValue('alist.enable') && ConfigService.getConfigValue('alist.baseUrl') && ConfigService.getConfigValue('alist.apiKey');
     },
+    _getBaseUrl(baseUrl) {
+        return String(baseUrl || '').replace(/\/+$/, '');
+    },
+    _normalizeFsPath(path) {
+        const normalizedPath = String(path || '')
+            .replace(/\\/g, '/')
+            .replace(/\/+/g, '/');
+        return normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`;
+    },
     /**
      * 获取目录列表
      * @param {string} path 目录路径
@@ -23,12 +32,50 @@ const alistService = {
         }
 
         try {
-            const response = await got.post(`${baseUrl}/api/fs/list`, {
+            const response = await got.post(`${this._getBaseUrl(baseUrl)}/api/fs/list`, {
                 json: {
                     path: path,
                     page: 1,
                     per_page: 0,
                     refresh: true
+                },
+                headers: {
+                    'Authorization': apiKey
+                }
+            }).json();
+
+            return response;
+        } catch (error) {
+            if (error.response) {
+                throw new Error(`AList API 错误: ${error.response.statusMessage}`);
+            }
+            throw error;
+        }
+    },
+
+    /**
+     * 获取文件或目录信息
+     * @param {string} path 文件或目录路径
+     * @param {string} password 受保护路径密码
+     * @returns {Promise<Object>} 返回文件或目录信息
+     */
+    async getFile(path, password = '') {
+        const baseUrl = await this.getConfig('alist.baseUrl');
+        const apiKey = await this.getConfig('alist.apiKey');
+
+        if (!baseUrl) {
+            throw new Error('AList baseUrl 未配置');
+        }
+
+        if (!apiKey) {
+            throw new Error('AList apiKey 未配置');
+        }
+
+        try {
+            const response = await got.post(`${this._getBaseUrl(baseUrl)}/api/fs/get`, {
+                json: {
+                    path: this._normalizeFsPath(path),
+                    password
                 },
                 headers: {
                     'Authorization': apiKey

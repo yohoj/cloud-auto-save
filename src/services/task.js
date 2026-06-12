@@ -273,6 +273,53 @@ class TaskService {
         }
     }
 
+    _normalizeRelativePath(value = '') {
+        return String(value || '')
+            .replace(/\\/g, '/')
+            .replace(/\/+/g, '/')
+            .replace(/^\/+|\/+$/g, '');
+    }
+
+    _joinRelativePath(...parts) {
+        return this._normalizeRelativePath(parts.filter(Boolean).join('/'));
+    }
+
+    _withFolderRelativePath(file, relativeDir = '') {
+        const normalizedRelativeDir = this._normalizeRelativePath(relativeDir);
+        const fileName = file.name || file.fileName || '';
+        const relativePath = this._joinRelativePath(normalizedRelativeDir, fileName);
+        return {
+            ...file,
+            name: fileName,
+            fileName: file.fileName || fileName,
+            relativeDir: normalizedRelativeDir,
+            relativePath,
+            displayName: relativePath || fileName
+        };
+    }
+
+    async _collectFolderFiles(cloud189, folderId, relativeDir = '', folderInfo = null) {
+        const currentFolderInfo = folderInfo || await cloud189.listFiles(folderId);
+        if (!currentFolderInfo || currentFolderInfo.res_code === "FileNotFound" || !currentFolderInfo.fileListAO) {
+            return [];
+        }
+
+        const files = (currentFolderInfo.fileListAO.fileList || [])
+            .map(file => this._withFolderRelativePath(file, relativeDir));
+
+        const folders = currentFolderInfo.fileListAO.folderList || [];
+        for (const folder of folders) {
+            const folderId = folder.id || folder.fileId;
+            const folderName = folder.name || folder.fileName;
+            if (!folderId || !folderName) continue;
+            const childRelativeDir = this._joinRelativePath(relativeDir, folderName);
+            const childFiles = await this._collectFolderFiles(cloud189, folderId, childRelativeDir);
+            files.push(...childFiles);
+        }
+
+        return files;
+    }
+
     // 获取文件夹下的所有文件
     async getAllFolderFiles(cloud189, task) {
         if (task.enableSystemProxy) {
@@ -281,7 +328,7 @@ class TaskService {
         const folderId = task.realFolderId
         const folderInfo = await cloud189.listFiles(folderId);
         // 如果folderInfo.res_code == FileNotFound 需要重新创建目录
-        if (folderInfo.res_code == "FileNotFound") {
+        if (folderInfo?.res_code == "FileNotFound") {
             logTaskEvent('文件夹不存在!')
             if (!task) {
                 throw new Error('文件夹不存在!');
@@ -297,8 +344,7 @@ class TaskService {
             return [];
         }
 
-        let allFiles = [...(folderInfo.fileListAO.fileList || [])];
-        return allFiles;
+        return await this._collectFolderFiles(cloud189, folderId, '', folderInfo);
     }
 
     // 自动创建目录
@@ -1326,7 +1372,7 @@ class TaskService {
         }
         const strmService = new StrmService()
         let strmList = []
-        strmList = files.map(file => path.join(strmService.getTaskLocalRelativePath(task), file.name));
+        strmList = files.map(file => path.join(strmService.getTaskLocalRelativePath(task), file.relativeDir || '', file.name));
         // 判断是否启用了系统代理
         if (task.enableSystemProxy) {
             // 代理文件

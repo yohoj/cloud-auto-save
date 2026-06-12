@@ -67,11 +67,27 @@ class StrmService {
         if (normalizedFullPath.startsWith(`${normalizedRootPath}/`)) {
             return normalizedFullPath.slice(normalizedRootPath.length + 1);
         }
-        return this._dropFirstPathSegment(normalizedFullPath);
+        return normalizedFullPath;
     }
 
     _joinPath(...parts) {
         return this._normalizePath(parts.filter(part => part !== undefined && part !== null && part !== '').join('/'));
+    }
+
+    _getFileName(file = {}) {
+        return file.name || file.fileName || path.basename(file.relativePath || '');
+    }
+
+    _getFileRelativeDir(file = {}) {
+        const relativeDir = this._normalizePath(file.relativeDir || '');
+        if (relativeDir) return relativeDir;
+
+        const relativePath = this._normalizePath(file.relativePath || '');
+        if (!relativePath) return '';
+
+        const parts = relativePath.split('/').filter(Boolean);
+        parts.pop();
+        return parts.join('/');
     }
 
     getAccountCloudRootPath(account) {
@@ -110,8 +126,73 @@ class StrmService {
         return this._joinPath(this.getAccountCloudRootPath(account), relativePath);
     }
 
-    _buildStrmContent(account, relativePath, fileName) {
-        return this._joinUrl(account.cloudStrmPrefix || '', this._joinPath(relativePath, fileName));
+    _isOpenListDirectUrl(value) {
+        try {
+            const url = new URL(value);
+            return ['http:', 'https:'].includes(url.protocol) && url.pathname.includes('/d/');
+        } catch (error) {
+            return false;
+        }
+    }
+
+    _appendSignToUrl(value, sign) {
+        if (!sign) return value;
+        try {
+            const url = new URL(value);
+            if (!['http:', 'https:'].includes(url.protocol)) return value;
+            url.searchParams.set('sign', sign);
+            return url.toString();
+        } catch (error) {
+            return value;
+        }
+    }
+
+    _hasSignParam(value) {
+        try {
+            const url = new URL(value);
+            return url.searchParams.has('sign');
+        } catch (error) {
+            return false;
+        }
+    }
+
+    async _shouldSkipExistingStrm(strmPath, overwrite) {
+        if (overwrite) {
+            return false;
+        }
+        try {
+            const content = (await fs.readFile(strmPath, 'utf8')).trim();
+            return !this._isOpenListDirectUrl(content) || this._hasSignParam(content);
+        } catch (err) {
+            return false;
+        }
+    }
+
+    async _getOpenListSign(account, relativePath, fileName, fileInfo = {}) {
+        if (fileInfo?.sign) {
+            return fileInfo.sign;
+        }
+
+        const alistPath = this.getAccountAlistPath(account, this._joinPath(relativePath, fileName));
+        const response = await alistService.getFile(alistPath);
+        if (response?.code && response.code !== 200) {
+            throw new Error(`获取OpenList签名失败: ${response.message || response.code}`);
+        }
+        const sign = response?.data?.sign || '';
+        if (!sign) {
+            throw new Error(`OpenList未返回签名: ${alistPath}`);
+        }
+        return sign;
+    }
+
+    async _buildStrmContent(account, relativePath, fileName, fileInfo = {}) {
+        const content = this._joinUrl(account.cloudStrmPrefix || '', this._joinPath(relativePath, fileName));
+        if (!this._isOpenListDirectUrl(content)) {
+            return content;
+        }
+
+        const sign = await this._getOpenListSign(account, relativePath, fileName, fileInfo);
+        return this._appendSignToUrl(content, sign);
     }
 
     /**
@@ -136,47 +217,53 @@ class StrmService {
             const mediaSuffixs = ConfigService.getConfigValue('task.mediaSuffix').split(';').map(suffix => suffix.toLowerCase())
             const taskRelativePath = this.getTaskRelativePath(task);
             // 构建完整的目标目录路径
-            const targetDir = this.getTaskStrmDir(task);
+            const rootTargetDir = this.getTaskStrmDir(task);
             if (compare) {
                 // 查询出所有目录下的.strm文件
                 const strmFiles = await this.listStrmFiles(this.getTaskLocalRelativePath(task));
+                const expectedStrmFiles = new Set(files
+                    .filter(file => this._checkFileSuffix({ ...file, name: this._getFileName(file) }, mediaSuffixs))
+                    .map(file => {
+                        const fileNameWithoutExt = path.parse(this._getFileName(file)).name;
+                        return path.join(this.getTaskLocalRelativePath(task), this._getFileRelativeDir(file), `${fileNameWithoutExt}.strm`);
+                    }));
                 // 将不在strmFiles中的文件删除
                 for (const file of strmFiles) {
-                    if (!files.some(f => path.parse(f.name).name === path.parse(file.name).name)) {
+                    if (!expectedStrmFiles.has(file.path)) {
                         await this.delete(file.path);
                     }
                 }
             }
-            overwrite && await this._deleteDirAllStrm(targetDir)
-            await this._ensureDirectoryExists(targetDir);
+            overwrite && await this._deleteDirAllStrm(rootTargetDir)
+            await this._ensureDirectoryExists(rootTargetDir);
             for (const file of files) {
                 // 检查文件是否是媒体文件
-                if (!this._checkFileSuffix(file, mediaSuffixs)) {
+                const fileName = this._getFileName(file);
+                if (!this._checkFileSuffix({ ...file, name: fileName }, mediaSuffixs)) {
                     // logTaskEvent(`文件不是媒体文件，跳过: ${file.name}`);
                     skipped++
                     continue;
                 }
                 
                 try {
-                    const fileName = file.name;
+                    const fileRelativeDir = this._getFileRelativeDir(file);
+                    const targetDir = path.join(rootTargetDir, fileRelativeDir);
                     const parsedPath = path.parse(fileName);
                     const fileNameWithoutExt = parsedPath.name;
                     const strmPath = path.join(targetDir, `${fileNameWithoutExt}.strm`);
 
+                    await this._ensureDirectoryExists(targetDir);
+
                     // 检查文件是否存在
-                    try {
-                        await fs.access(strmPath);
-                        if (!overwrite) {
-                            // logTaskEvent(`STRM文件已存在，跳过: ${strmPath}`);
-                            skipped++
-                            continue;
-                        }
-                    } catch (err) {
-                        // 文件不存在，继续处理
+                    if (await this._shouldSkipExistingStrm(strmPath, overwrite)) {
+                        // logTaskEvent(`STRM文件已存在，跳过: ${strmPath}`);
+                        skipped++
+                        continue;
                     }
 
                     // 生成STRM文件内容
-                    const content = this._buildStrmContent(task.account, taskRelativePath, fileName);
+                    const contentRelativePath = this._joinPath(taskRelativePath, fileRelativeDir);
+                    const content = await this._buildStrmContent(task.account, contentRelativePath, fileName, file);
                     await fs.writeFile(strmPath, content, 'utf8');
                     // 设置文件权限
                     if (process.getuid && process.getuid() === 0) {
@@ -302,21 +389,16 @@ class StrmService {
                     const strmPath = path.join(targetDir, `${parsedPath.name}.strm`);
                     // overwrite && await this._deleteDirAllStrm(targetDir)
                     // 检查文件是否存在
-                    try {
-                        await fs.access(strmPath);
-                        if (!overwrite) {
-                            // console.log(`STRM文件已存在，跳过: ${strmPath}`);
-                            stats.skipped++
-                            continue;
-                        }
-                    } catch (err) {
-                        // 文件不存在，继续处理
+                    if (await this._shouldSkipExistingStrm(strmPath, overwrite)) {
+                        // console.log(`STRM文件已存在，跳过: ${strmPath}`);
+                        stats.skipped++
+                        continue;
                     }
 
                     await this._ensureDirectoryExists(targetDir);
 
                     // 生成STRM文件内容
-                    const content = this._buildStrmContent(account, relativePath, file.name);
+                    const content = await this._buildStrmContent(account, relativePath, file.name, file);
                     // 写入STRM文件
                     await fs.writeFile(strmPath, content, 'utf8');
                     if (process.getuid && process.getuid() === 0) {
@@ -350,7 +432,10 @@ class StrmService {
             for (const item of items) {
                 const fullPath = path.join(targetPath, item.name);
                 const relativePath = path.relative(this.baseDir, fullPath);
-                if (item.isFile() && !item.name.startsWith('.') && path.extname(item.name) === '.strm') {
+                if (item.isDirectory()) {
+                    const childResults = await this.listStrmFiles(relativePath);
+                    results.push(...childResults);
+                } else if (item.isFile() && !item.name.startsWith('.') && path.extname(item.name) === '.strm') {
                     // 读取STRM文件内容
                     results.push({
                         id: item.name,
@@ -465,10 +550,12 @@ class StrmService {
             logTaskEvent(`STRM目录不存在，跳过删除: ${dirPath}`);
             return;
         }
-        const files = await fs.readdir(dirPath);
+        const files = await fs.readdir(dirPath, { withFileTypes: true });
         await Promise.all(files.map(async file => {
-            const filePath = path.join(dirPath, file);
-            if (path.extname(filePath) === '.strm') {
+            const filePath = path.join(dirPath, file.name);
+            if (file.isDirectory()) {
+                await this._deleteDirAllStrm(filePath);
+            } else if (path.extname(filePath) === '.strm') {
                 try {
                     await fs.unlink(filePath);
                     logTaskEvent(`删除文件成功: ${filePath}`);
