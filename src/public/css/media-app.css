@@ -2161,21 +2161,6 @@ html body #taskTable tbody tr.selected {
         inset 0 0 0 1px rgba(76, 151, 255, 0.24) !important;
 }
 
-html body #taskTable tbody tr.selected::after {
-    content: "" !important;
-    position: absolute !important;
-    top: 14px !important;
-    right: 14px !important;
-    width: 10px !important;
-    height: 10px !important;
-    background: linear-gradient(180deg, #55a8ff, #0a84ff) !important;
-    border-radius: 999px !important;
-    box-shadow:
-        0 0 0 4px rgba(10, 132, 255, 0.12),
-        0 4px 10px rgba(10, 132, 255, 0.22) !important;
-    pointer-events: none !important;
-}
-
 html body.table-view #taskTable tbody tr.selected,
 html body .table-view #taskTable tbody tr.selected {
     outline: 1px solid rgba(0, 122, 255, 0.28) !important;
