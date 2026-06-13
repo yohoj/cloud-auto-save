@@ -298,7 +298,7 @@ class TaskService {
         };
     }
 
-    async _collectFolderFiles(cloud189, folderId, relativeDir = '', folderInfo = null) {
+    async _collectFolderFiles(cloud189, folderId, relativeDir = '', folderInfo = null, includeFolders = false) {
         const currentFolderInfo = folderInfo || await cloud189.listFiles(folderId);
         if (!currentFolderInfo || currentFolderInfo.res_code === "FileNotFound" || !currentFolderInfo.fileListAO) {
             return [];
@@ -313,7 +313,10 @@ class TaskService {
             const folderName = folder.name || folder.fileName;
             if (!folderId || !folderName) continue;
             const childRelativeDir = this._joinRelativePath(relativeDir, folderName);
-            const childFiles = await this._collectFolderFiles(cloud189, folderId, childRelativeDir);
+            if (includeFolders) {
+                files.push(this._withFolderRelativePath(folder, relativeDir));
+            }
+            const childFiles = await this._collectFolderFiles(cloud189, folderId, childRelativeDir, null, includeFolders);
             files.push(...childFiles);
         }
 
@@ -321,7 +324,7 @@ class TaskService {
     }
 
     // 获取文件夹下的所有文件
-    async getAllFolderFiles(cloud189, task) {
+    async getAllFolderFiles(cloud189, task, includeFolders = false) {
         if (task.enableSystemProxy) {
             throw new Error('系统代理模式已移除');
         }
@@ -337,14 +340,14 @@ class TaskService {
             const enableAutoCreateFolder = ConfigService.getConfigValue('task.enableAutoCreateFolder');
             if (enableAutoCreateFolder) {
                 await this._autoCreateFolder(cloud189, task);
-                return await this.getAllFolderFiles(cloud189, task);
+                return await this.getAllFolderFiles(cloud189, task, includeFolders);
             }
         }
         if (!folderInfo || !folderInfo.fileListAO) {
             return [];
         }
 
-        return await this._collectFolderFiles(cloud189, folderId, '', folderInfo);
+        return await this._collectFolderFiles(cloud189, folderId, '', folderInfo, includeFolders);
     }
 
     // 自动创建目录
@@ -385,6 +388,30 @@ class TaskService {
         logTaskEvent('目录创建完成');
     }
 
+    _isQuarkStokenExpired(responseOrError) {
+        const code = responseOrError?.code || responseOrError?.res_code || responseOrError?.status;
+        const message = responseOrError?.res_msg || responseOrError?.message || '';
+        return code == 41016 || message.includes('stoken过期') || message.includes('stoken已过期');
+    }
+
+    async _refreshQuarkShareToken(cloud189, task) {
+        if (!CloudUtils.isQuarkAccount(task.account)) return false;
+
+        logTaskEvent(`任务 ${task.id}: 夸克分享stoken已过期，正在重新获取`);
+        const shareId = task.shareId || CloudUtils.parseShareCode(task.shareLink, task.account);
+        const shareInfo = await this.getShareInfo(cloud189, shareId, task.accessCode);
+        const stoken = shareInfo?.stoken || shareInfo?.shareMode;
+        if (shareInfo?.res_code != 0 || !stoken) {
+            throw new Error(shareInfo?.res_msg || '刷新夸克分享stoken失败');
+        }
+
+        task.shareId = shareInfo.shareId || shareId;
+        task.shareMode = stoken;
+        await this.taskRepo.save(task);
+        logTaskEvent(`任务 ${task.id}: 夸克分享stoken刷新成功`);
+        return true;
+    }
+
     // 处理新文件
     async _handleNewFiles(task, newFiles, cloud189, mediaSuffixs) {
         const taskInfoList = [];
@@ -399,7 +426,7 @@ class TaskService {
                 taskInfoList.push({
                     fileId: file.id,
                     fileName: file.name,
-                    isFolder: 0,
+                    isFolder: file.isFolder ? 1 : 0,
                     md5: file.md5,
                     shareFidToken: file.shareFidToken,
                     fidToken: file.fidToken,
@@ -423,7 +450,14 @@ class TaskService {
                     shareMode: task.shareMode,
                     shareFolderId: task.shareFolderId
                 });
-                await this.createBatchTask(cloud189, batchTaskDto);
+                try {
+                    await this.createBatchTask(cloud189, batchTaskDto);
+                } catch (error) {
+                    if (!this._isQuarkStokenExpired(error)) throw error;
+                    await this._refreshQuarkShareToken(cloud189, task);
+                    batchTaskDto.shareMode = task.shareMode;
+                    await this.createBatchTask(cloud189, batchTaskDto);
+                }
             }else{
                 throw new Error('系统代理模式已移除');
             }
@@ -504,8 +538,13 @@ class TaskService {
             }
             task.account = account;
             const cloud189 = CloudUtils.getService(account);
+            const isQuarkTask = CloudUtils.isQuarkAccount(account);
              // 获取分享文件列表并进行增量转存
-             const shareDir = await cloud189.listShareDir(task.shareId, task.shareFolderId, task.shareMode,task.accessCode, task.isFolder);
+             let shareDir = await cloud189.listShareDir(task.shareId, task.shareFolderId, task.shareMode,task.accessCode, task.isFolder);
+             if (this._isQuarkStokenExpired(shareDir)) {
+                await this._refreshQuarkShareToken(cloud189, task);
+                shareDir = await cloud189.listShareDir(task.shareId, task.shareFolderId, task.shareMode,task.accessCode, task.isFolder);
+             }
              if(shareDir.res_code == "ShareAuditWaiting") {
                 logTaskEvent("分享链接审核中, 等待下次执行")
                 return ''
@@ -514,12 +553,22 @@ class TaskService {
                 logTaskEvent("获取文件列表失败: " + JSON.stringify(shareDir));
                 throw new Error('获取文件列表失败');
             }
-            let shareFiles = [...shareDir.fileListAO.fileList];            
-            const folderFiles = await this.getAllFolderFiles(cloud189, task);
+            let shareFiles = [
+                ...(shareDir.fileListAO.fileList || []),
+                ...(isQuarkTask ? (shareDir.fileListAO.folderList || []) : [])
+            ];
+            const sourceFileCount = shareDir.fileListAO.fileList?.length || 0;
+            const sourceFolderCount = shareDir.fileListAO.folderList?.length || 0;
+            const folderFiles = await this.getAllFolderFiles(cloud189, task, isQuarkTask);
             const enableOnlySaveMedia = ConfigService.getConfigValue('task.enableOnlySaveMedia');
             // mediaSuffixs转为小写
             const mediaSuffixs = ConfigService.getConfigValue('task.mediaSuffix').split(';').map(suffix => suffix.toLowerCase())
-            const { existingFiles, existingFileNames, existingMediaCount } = folderFiles.reduce((acc, file) => {
+            const { existingFiles, existingFileNames, existingFolderNames, existingMediaCount } = folderFiles.reduce((acc, file) => {
+                if (file.isFolder) {
+                    acc.existingFolderNames.add(file.name);
+                    if (file.relativePath) acc.existingFolderNames.add(file.relativePath);
+                    return acc;
+                }
                 if (!file.isFolder) {
                     acc.existingFiles.add(file.md5);
                     acc.existingFileNames.add(file.name);
@@ -531,6 +580,7 @@ class TaskService {
             }, { 
                 existingFiles: new Set(), 
                 existingFileNames: new Set(), 
+                existingFolderNames: new Set(),
                 existingMediaCount: 0 
             });
             let aiFiltered = false;
@@ -544,9 +594,9 @@ class TaskService {
             
             const newFiles = shareFiles
                 .filter(file => 
-                    !file.isFolder && !existingFiles.has(file.md5) 
-                   && !existingFileNames.has(file.name)
-                   && this._checkFileSuffix(file, enableOnlySaveMedia, mediaSuffixs)
+                    (file.isFolder
+                        ? isQuarkTask && !existingFolderNames.has(file.name)
+                        : !existingFiles.has(file.md5) && !existingFileNames.has(file.name) && this._checkFileSuffix(file, enableOnlySaveMedia, mediaSuffixs))
                    && (aiFiltered || this._handleMatchMode(task, file))
                    && !this.isHarmonized(file)
                 );
@@ -580,6 +630,8 @@ class TaskService {
                 }
                 task.currentEpisodes = existingMediaCount;
                 logTaskEvent(`${task.resourceName} 没有增量剧集`)
+            } else {
+                logTaskEvent(`${task.resourceName} 未发现可转存文件，源文件${sourceFileCount}个，源目录${sourceFolderCount}个，过滤后0个`)
             }
             // 检查是否达到总数
             if (task.totalEpisodes && task.currentEpisodes >= task.totalEpisodes) {
@@ -1085,7 +1137,11 @@ class TaskService {
             throw new Error('批量任务处理失败');
         }
         if (resp.res_code != 0) {
-            throw new Error(resp.res_msg);
+            const error = new Error(resp.res_msg || '批量任务处理失败');
+            error.res_code = resp.res_code;
+            error.status = resp.status;
+            error.code = resp.code;
+            throw error;
         }
         logTaskEvent(`批量任务处理中: ${JSON.stringify(resp)}`)
         if (!await this.checkTaskStatus(cloud189,resp.taskId, 0 , batchTaskDto)) {

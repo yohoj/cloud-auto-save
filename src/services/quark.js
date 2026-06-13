@@ -75,7 +75,20 @@ class QuarkService {
             return response;
         } catch (error) {
             if (error instanceof got.HTTPError) {
-                logTaskEvent(`请求夸克网盘接口失败: HTTP ${error.response?.statusCode || 'unknown'} ${(error.response?.body || '').slice(0, 200)}`);
+                const body = error.response?.body || '';
+                logTaskEvent(`请求夸克网盘接口失败: HTTP ${error.response?.statusCode || 'unknown'} ${body.slice(0, 200)}`);
+                try {
+                    const parsed = JSON.parse(body);
+                    if (parsed && typeof parsed === 'object') {
+                        return {
+                            ...parsed,
+                            status: parsed.status || error.response?.statusCode,
+                            httpStatusCode: error.response?.statusCode
+                        };
+                    }
+                } catch (parseError) {
+                    // 非 JSON 错误响应按原逻辑返回 null。
+                }
             } else if (error instanceof got.TimeoutError) {
                 logTaskEvent('请求夸克网盘接口失败: 请求超时, 请检查是否能访问夸克网盘');
             } else {
@@ -183,7 +196,13 @@ class QuarkService {
             }
         });
         if (!response || response.status !== 200) {
-            return response ? { res_code: response.status, res_msg: response.message } : null;
+            return response ? {
+                res_code: response.code || response.status,
+                res_msg: response.message,
+                status: response.status,
+                code: response.code,
+                raw: response
+            } : null;
         }
         const list = response.data?.list || [];
         return {
@@ -349,8 +368,10 @@ class QuarkService {
     normalizeTaskCreate(response) {
         if (!response) return null;
         return {
-            res_code: response.status === 200 ? 0 : response.status,
+            res_code: response.status === 200 ? 0 : (response.code || response.status),
             res_msg: response.message || '',
+            status: response.status,
+            code: response.code,
             taskId: response.data?.task_id || response.data?.taskId || response.data?.fid || 'quark-immediate'
         };
     }
