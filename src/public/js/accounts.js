@@ -369,7 +369,7 @@ function formatCapacityInfo(capacityInfo) {
     return formatBytes(usedBytes) + '/' + formatBytes(totalBytes);
 }
 async function clearRecycleBin() {
-    if (!confirm('确定要清空所有账号的回收站吗？')) {
+    if (!confirm('确定要清空所有天翼云盘账号的回收站吗？')) {
         return;
     }
     try {
@@ -380,7 +380,7 @@ async function clearRecycleBin() {
         if (data.success) {
             message.success('后台任务执行中, 请稍后查看结果');
         } else {
-            message.warning('清空回收站失败: ' + data.error);
+            message.warning('清空天翼回收站失败: ' + data.error);
         }
     } catch (error) {
         message.warning('操作失败: ' + error.message);

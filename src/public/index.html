@@ -84,7 +84,7 @@
                     <div class="operation-group">
                         <div class="button-group">
                             <button type="button" onclick="openAddAccountModal()" class="btn-primary">添加账号</button>
-                            <button type="button" onclick="clearRecycleBin()" class="btn-warning">清空回收站</button>
+                            <button type="button" onclick="clearRecycleBin()" class="btn-warning">清空天翼回收站</button>
                         </div>
                     </div>
                 </div>
@@ -415,15 +415,15 @@
                         <div class="push-item">
                             <label>
                                 <input type="checkbox" id="enableAutoClearRecycle">
-                                自动清空个人回收站
+                                自动清空天翼个人回收站
                             </label>
                             <label>
                                 <input type="checkbox" id="enableAutoClearFamilyRecycle">
-                                自动清空回家庭收站
+                                自动清空天翼家庭回收站
                             </label>
 
                             <input type="text" id="cleanRecycleCron" placeholder="Cron表达式">
-                            <small class="form-text">默认：0 */8 * * * (每8小时)</small>
+                            <small class="form-text">默认：0 */8 * * * (每8小时)，仅清理天翼云盘账号</small>
                         </div>
                         <div class="push-item">
                             <label for="mediaSuffix">媒体文件后缀</label>

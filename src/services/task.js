@@ -1156,6 +1156,10 @@ class TaskService {
             for (const account of accounts) {
                 let username = account.username.replace(/(.{3}).*(.{4})/, '$1****$2');
                 try {
+                    if (CloudUtils.isQuarkAccount(account)) {
+                        logTaskEvent(`跳过[${username}]回收站清理: 夸克网盘暂不支持自动清空回收站`);
+                        continue;
+                    }
                     const cloud189 = CloudUtils.getService(account); 
                     await this._clearRecycleBin(cloud189, username, enableAutoClearRecycle, enableAutoClearFamilyRecycle)
                 } catch (error) {
