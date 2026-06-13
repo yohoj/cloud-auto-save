@@ -1,5 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
+const got = require('got');
 const ConfigService = require('./ConfigService');
 const { logTaskEvent } = require('../utils/logUtils');
 const CryptoUtils = require('../utils/cryptoUtils');
@@ -156,6 +157,144 @@ class StrmService {
         }
     }
 
+    _appendQueryParamsToUrl(value, params = {}) {
+        try {
+            const url = new URL(value);
+            if (!['http:', 'https:'].includes(url.protocol)) return value;
+            Object.entries(params).forEach(([key, paramValue]) => {
+                if (paramValue !== undefined && paramValue !== null && paramValue !== '') {
+                    url.searchParams.set(key, paramValue);
+                }
+            });
+            return url.toString();
+        } catch (error) {
+            return value;
+        }
+    }
+
+    _isCasFileName(value = '') {
+        return String(value || '').toLowerCase().endsWith('.cas');
+    }
+
+    _getCasFallbackRestoreName(casName = '') {
+        return String(casName || '').replace(/\.cas$/i, '');
+    }
+
+    _deriveCasRestoreName(casName, originalName = '') {
+        const nameWithoutCas = this._getCasFallbackRestoreName(casName);
+        const baseName = path.parse(nameWithoutCas).name;
+        const originalExt = path.extname(originalName || nameWithoutCas);
+        const fallbackBaseName = path.parse(originalName || nameWithoutCas).name;
+        return `${baseName || fallbackBaseName}${originalExt}`;
+    }
+
+    _decodeCasContent(content) {
+        const decoded = Buffer.from(String(content || '').trim(), 'base64').toString('utf8');
+        const payload = JSON.parse(decoded);
+        const info = {
+            name: payload.name || payload.Name || '',
+            size: payload.size ?? payload.Size,
+            md5: payload.md5 || payload.MD5 || '',
+            sliceMd5: payload.sliceMd5 || payload.SliceMD5 || payload.sliceMD5 || ''
+        };
+        if (!info.name || info.size === undefined || info.size < 0 || !info.md5) {
+            throw new Error('无效的CAS元数据');
+        }
+        if (!info.sliceMd5) {
+            info.sliceMd5 = info.md5;
+        }
+        return info;
+    }
+
+    async _fetchCasInfoFromCloud189(account, file = {}) {
+        const fileId = file.id || file.fileId;
+        const CloudUtils = require('../utils/CloudUtils');
+        if (!fileId || CloudUtils.isQuarkAccount(account)) {
+            return null;
+        }
+        const cloud189 = CloudUtils.getService(account);
+        const content = await cloud189.getFileText(fileId);
+        return this._decodeCasContent(content);
+    }
+
+    async _fetchCasInfoFromOpenList(account, relativePath, fileName, fileInfo = {}) {
+        const contentUrl = this._joinUrl(account.cloudStrmPrefix || '', this._joinPath(relativePath, fileName));
+        if (!this._isOpenListDirectUrl(contentUrl)) {
+            return null;
+        }
+        let url = contentUrl;
+        try {
+            const sign = fileInfo?.sign || await this._getOpenListSign(account, relativePath, fileName, fileInfo);
+            url = this._appendSignToUrl(url, sign);
+        } catch (error) {
+            // 允许公开路径或旧配置继续尝试读取。
+        }
+        const response = await got(url, {
+            followRedirect: true,
+            throwHttpErrors: false,
+            timeout: { request: 30000 }
+        });
+        if (response.statusCode >= 300) {
+            return null;
+        }
+        return this._decodeCasContent(response.body);
+    }
+
+    async _getCasInfo(account, relativePath, fileName, fileInfo = {}) {
+        if (fileInfo.casInfo) {
+            return fileInfo.casInfo;
+        }
+        try {
+            const cloudInfo = await this._fetchCasInfoFromCloud189(account, fileInfo);
+            if (cloudInfo) {
+                fileInfo.casInfo = cloudInfo;
+                return cloudInfo;
+            }
+        } catch (error) {
+            logTaskEvent(`读取天翼CAS元数据失败: ${fileName}, 错误: ${error.message}`);
+        }
+        try {
+            const openListInfo = await this._fetchCasInfoFromOpenList(account, relativePath, fileName, fileInfo);
+            if (openListInfo) {
+                fileInfo.casInfo = openListInfo;
+                return openListInfo;
+            }
+        } catch (error) {
+            logTaskEvent(`读取OpenList CAS元数据失败: ${fileName}, 错误: ${error.message}`);
+        }
+        return null;
+    }
+
+    async _getPlayableFileName(file, account, relativePath, mediaSuffixs) {
+        const fileName = this._getFileName(file);
+        if (!this._isCasFileName(fileName)) {
+            return fileName;
+        }
+
+        const fallbackName = this._getCasFallbackRestoreName(fileName);
+        if (this._checkNameSuffix(fallbackName, mediaSuffixs)) {
+            return fallbackName;
+        }
+
+        const casInfo = await this._getCasInfo(account, relativePath, fileName, file);
+        if (!casInfo) {
+            return fallbackName;
+        }
+        return this._deriveCasRestoreName(fileName, casInfo.name);
+    }
+
+    _getStrmBaseName(sourceFileName, playableFileName) {
+        const parsedPath = path.parse(playableFileName || sourceFileName || '');
+        if (!this._isCasFileName(sourceFileName)) {
+            return parsedPath.name;
+        }
+        const mediaExt = parsedPath.ext.replace(/^\./, '');
+        if (!mediaExt) {
+            return parsedPath.name;
+        }
+        return `${parsedPath.name}.(${mediaExt})`;
+    }
+
     async _shouldSkipExistingStrm(strmPath, overwrite) {
         if (overwrite) {
             return false;
@@ -186,13 +325,17 @@ class StrmService {
     }
 
     async _buildStrmContent(account, relativePath, fileName, fileInfo = {}) {
-        const content = this._joinUrl(account.cloudStrmPrefix || '', this._joinPath(relativePath, fileName));
+        let content = this._joinUrl(account.cloudStrmPrefix || '', this._joinPath(relativePath, fileName));
         if (!this._isOpenListDirectUrl(content)) {
             return content;
         }
 
         const sign = await this._getOpenListSign(account, relativePath, fileName, fileInfo);
-        return this._appendSignToUrl(content, sign);
+        content = this._appendSignToUrl(content, sign);
+        if (this._isCasFileName(fileName)) {
+            return this._appendQueryParamsToUrl(content, { type: 'cas_video' });
+        }
+        return content;
     }
 
     /**
@@ -221,12 +364,17 @@ class StrmService {
             if (compare) {
                 // 查询出所有目录下的.strm文件
                 const strmFiles = await this.listStrmFiles(this.getTaskLocalRelativePath(task));
-                const expectedStrmFiles = new Set(files
-                    .filter(file => this._checkFileSuffix({ ...file, name: this._getFileName(file) }, mediaSuffixs))
-                    .map(file => {
-                        const fileNameWithoutExt = path.parse(this._getFileName(file)).name;
-                        return path.join(this.getTaskLocalRelativePath(task), this._getFileRelativeDir(file), `${fileNameWithoutExt}.strm`);
-                    }));
+                const expectedStrmFiles = new Set();
+                for (const file of files) {
+                    const fileRelativeDir = this._getFileRelativeDir(file);
+                    const contentRelativePath = this._joinPath(taskRelativePath, fileRelativeDir);
+                    const playableFileName = await this._getPlayableFileName(file, task.account, contentRelativePath, mediaSuffixs);
+                    if (!this._checkNameSuffix(playableFileName, mediaSuffixs)) {
+                        continue;
+                    }
+                    const strmBaseName = this._getStrmBaseName(this._getFileName(file), playableFileName);
+                    expectedStrmFiles.add(path.join(this.getTaskLocalRelativePath(task), fileRelativeDir, `${strmBaseName}.strm`));
+                }
                 // 将不在strmFiles中的文件删除
                 for (const file of strmFiles) {
                     if (!expectedStrmFiles.has(file.path)) {
@@ -239,18 +387,19 @@ class StrmService {
             for (const file of files) {
                 // 检查文件是否是媒体文件
                 const fileName = this._getFileName(file);
-                if (!this._checkFileSuffix({ ...file, name: fileName }, mediaSuffixs)) {
+                const fileRelativeDir = this._getFileRelativeDir(file);
+                const contentRelativePath = this._joinPath(taskRelativePath, fileRelativeDir);
+                const playableFileName = await this._getPlayableFileName(file, task.account, contentRelativePath, mediaSuffixs);
+                if (!this._checkNameSuffix(playableFileName, mediaSuffixs)) {
                     // logTaskEvent(`文件不是媒体文件，跳过: ${file.name}`);
                     skipped++
                     continue;
                 }
                 
                 try {
-                    const fileRelativeDir = this._getFileRelativeDir(file);
                     const targetDir = path.join(rootTargetDir, fileRelativeDir);
-                    const parsedPath = path.parse(fileName);
-                    const fileNameWithoutExt = parsedPath.name;
-                    const strmPath = path.join(targetDir, `${fileNameWithoutExt}.strm`);
+                    const strmBaseName = this._getStrmBaseName(fileName, playableFileName);
+                    const strmPath = path.join(targetDir, `${strmBaseName}.strm`);
 
                     await this._ensureDirectoryExists(targetDir);
 
@@ -262,7 +411,6 @@ class StrmService {
                     }
 
                     // 生成STRM文件内容
-                    const contentRelativePath = this._joinPath(taskRelativePath, fileRelativeDir);
                     const content = await this._buildStrmContent(task.account, contentRelativePath, fileName, file);
                     await fs.writeFile(strmPath, content, 'utf8');
                     // 设置文件权限
@@ -272,13 +420,13 @@ class StrmService {
                     await fs.chmod(strmPath, this.fileMode);
                     results.push({
                         originalFile: fileName,
-                        strmFile: `${fileNameWithoutExt}.strm`,
+                        strmFile: `${strmBaseName}.strm`,
                         path: strmPath
                     });
                     logTaskEvent(`生成STRM文件成功: ${strmPath}`);
                     success++
                 } catch (error) {
-                    logTaskEvent(`生成STRM文件失败: ${file.name}, 错误: ${error.message}`);
+                    logTaskEvent(`生成STRM文件失败: ${fileName}, 错误: ${error.message}`);
                     failed++
                 }
             }
@@ -375,18 +523,19 @@ class StrmService {
                     await this._processDirectory(this._joinPath(dirPath, file.name), account, stats, mediaSuffixs, overwrite, rootPath);
                 } else {
                     stats.totalFiles++;
+                    const relativePath = this._getRelativePath(dirPath, rootPath);
+                    const playableFileName = await this._getPlayableFileName(file, account, relativePath, mediaSuffixs);
                     // 检查是否为媒体文件
-                    if (!this._checkFileSuffix(file, mediaSuffixs)) {
+                    if (!this._checkNameSuffix(playableFileName, mediaSuffixs)) {
                         // console.log(`文件不是媒体文件，跳过: ${file.name}`);
                         stats.skipped++;
                         continue;
                     }
 
                     // 构建STRM文件路径
-                    const relativePath = this._getRelativePath(dirPath, rootPath);
                     const targetDir = path.join(this.baseDir, account.localStrmPrefix, relativePath);
-                    const parsedPath = path.parse(file.name);
-                    const strmPath = path.join(targetDir, `${parsedPath.name}.strm`);
+                    const strmBaseName = this._getStrmBaseName(file.name, playableFileName);
+                    const strmPath = path.join(targetDir, `${strmBaseName}.strm`);
                     // overwrite && await this._deleteDirAllStrm(targetDir)
                     // 检查文件是否存在
                     if (await this._shouldSkipExistingStrm(strmPath, overwrite)) {
@@ -565,11 +714,14 @@ class StrmService {
             }
         }));
     }
+    _checkNameSuffix(fileName, mediaSuffixs) {
+         const fileExt = path.extname(fileName || '').toLowerCase();
+         return mediaSuffixs.includes(fileExt)
+    }
+
     //检查文件是否是媒体文件
     _checkFileSuffix(file, mediaSuffixs) {
-         // 获取文件后缀
-         const fileExt = '.' + file.name.split('.').pop().toLowerCase();
-         return mediaSuffixs.includes(fileExt)
+         return this._checkNameSuffix(this._getFileName(file), mediaSuffixs)
     }
 
     _joinUrl(base, path) {

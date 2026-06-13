@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const SECRET_PLACEHOLDER = '********';
+const OLD_DEFAULT_MEDIA_SUFFIX = '.mkv;.iso;.ts;.mp4;.avi;.rmvb;.wmv;.m2ts;.mpg;.flv;.rm;.mov';
+const DEFAULT_MEDIA_SUFFIX = `${OLD_DEFAULT_MEDIA_SUFFIX};.cas`;
 
 class ConfigService {
   constructor() {
@@ -17,7 +19,7 @@ class ConfigService {
         retryInterval: 300,   // 重试间隔（秒）
         enableAutoClearRecycle: false,
         enableAutoClearFamilyRecycle: false,
-        mediaSuffix: '.mkv;.iso;.ts;.mp4;.avi;.rmvb;.wmv;.m2ts;.mpg;.flv;.rm;.mov', // 媒体文件后缀
+        mediaSuffix: DEFAULT_MEDIA_SUFFIX, // 媒体文件后缀
         enableOnlySaveMedia: false, // 只保存媒体文件
         // 文件夹不存在时重新创建
         enableAutoCreateFolder: false,
@@ -160,6 +162,9 @@ class ConfigService {
         const data = fs.readFileSync(this._configFile, 'utf8');
         const fileConfig = JSON.parse(data);
         this._config = this._deepMerge(this._config, fileConfig);
+        if (this._migrateConfig()) {
+          this._saveConfig();
+        }
       }else {
         this._saveConfig();
       }
@@ -179,6 +184,15 @@ class ConfigService {
       }
     }
     return result;
+  }
+
+  _migrateConfig() {
+    let changed = false;
+    if (this._config.task?.mediaSuffix === OLD_DEFAULT_MEDIA_SUFFIX) {
+      this._config.task.mediaSuffix = DEFAULT_MEDIA_SUFFIX;
+      changed = true;
+    }
+    return changed;
   }
 
 

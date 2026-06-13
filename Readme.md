@@ -225,6 +225,8 @@ Docker 容器内主要目录：
 http://alist:5244/d/云盘
 ```
 
+如果媒体目录指向 OpenList-CAS，`.mkv.cas`、`.mp4.cas` 等 CAS 文件会生成 `文件名.(mkv).strm`、`文件名.(mp4).strm`，STRM 内容会追加 `type=cas_video` 以触发 OpenList-CAS 的临时恢复播放。
+
 ## OpenList / AList
 
 配置位置：媒体设置。

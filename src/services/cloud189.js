@@ -420,6 +420,38 @@ class Cloud189Service {
         })
         return res.headers.location
     }
+
+    // 获取普通文件下载链接，适用于读取 .cas 等非视频小文件
+    async getFileDownloadUrl(fileId) {
+        const response = await this.client.getFileDownloadUrl({ fileId });
+        const downloadUrl = response?.fileDownloadUrl || '';
+        if (!downloadUrl) {
+            throw new Error('获取文件下载链接失败');
+        }
+        const url = downloadUrl.replace(/&amp;/g, '&').replace(/^http:\/\//, 'https://');
+        const res = await got(url, {
+            followRedirect: false,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0'
+            },
+            agent: ProxyUtil.getProxyAgent('cloud189'),
+            dnsLookupIpVersion: 'ipv4',
+            timeout: { request: 30000 }
+        });
+        return res.headers.location || url;
+    }
+
+    async getFileText(fileId) {
+        const url = await this.getFileDownloadUrl(fileId);
+        return await got(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0'
+            },
+            agent: ProxyUtil.getProxyAgent('cloud189'),
+            dnsLookupIpVersion: 'ipv4',
+            timeout: { request: 30000 }
+        }).text();
+    }
     // 记录转存量
     async increaseShareFileAccessCount(shareId) {
         const response = await this.request('https://cloud.189.cn/api/portal//share/increaseShareFileAccessCount.action', {

@@ -1199,8 +1199,12 @@ class TaskService {
     // 校验文件后缀
     _checkFileSuffix(file,enableOnlySaveMedia, mediaSuffixs) {
         // 获取文件后缀
-        const fileExt = '.' + file.name.split('.').pop().toLowerCase();
-        const isMedia = mediaSuffixs.includes(fileExt)
+        const fileExt = path.extname(file.name || '').toLowerCase();
+        let isMedia = mediaSuffixs.includes(fileExt)
+        if (!isMedia && fileExt === '.cas') {
+            const sourceExt = path.extname((file.name || '').replace(/\.cas$/i, '')).toLowerCase();
+            isMedia = !sourceExt || mediaSuffixs.includes(sourceExt);
+        }
         // 如果启用了只保存媒体文件, 则检查文件后缀是否在配置中
         if (enableOnlySaveMedia && !isMedia) {
             return false
