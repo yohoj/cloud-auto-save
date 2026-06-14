@@ -272,7 +272,8 @@ class FolderSelector {
             item.className = 'folder-tree-item';
             item.dataset.folderId = String(node.id);
             // 常用目录视图不显示展开图标和复选框 是否允许点击
-            const expandIcon = (this.isShowingFavorites || node.isFile) ? '' : '<span class="expand-icon">▶</span>';
+            const canExpand = !this.isShowingFavorites && !node.isFile && !node.disableExpand;
+            const expandIcon = canExpand ? '<span class="expand-icon">▶</span>' : '';
             const isFavorite = favorites.some(f => f.id === node.id);
             const favoriteIcon = this.enableFavorites ? `
                 <span class="favorite-icon ${isFavorite ? 'active' : ''}" data-id="${node.id}" data-name="${node.name}">
@@ -317,7 +318,7 @@ class FolderSelector {
             item.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 this.selectFolder(node, item);
-                if (this.isShowingFavorites || node.isFile) {
+                if (!canExpand) {
                     return;
                 }
                 if (!item.classList.contains('expanded')) {

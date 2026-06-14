@@ -270,14 +270,14 @@
                                 <small class="form-text">默认使用分享目录第一个文件夹名称,识别完成后可更改</small>
                             </div>
                             <div class="form-group share-folders-group" style="display: none;">
-                                <label>分享目录</label>
-                                <div class="share-folders-list"
-                                    style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); padding: 0; border-radius: 4px;">
-                                    <div class="folder-select-header">
-                                        <small>请选择一个分享目录</small>
+                                <label for="createShareFolder">分享目录</label>
+                                <div class="tree-select" style="display: flex; gap: 10px;">
+                                    <div style="flex: 1; position: relative;">
+                                        <input type="text" id="createShareFolder" readonly required>
+                                        <input type="hidden" id="createShareFolderId" required>
                                     </div>
-                                    <div id="shareFoldersList"></div>
                                 </div>
+                                <small class="form-text">默认使用当前分享目录，点击可选择其他子目录</small>
                             </div>
                             <div class="form-group">
                                 <label for="targetFolderId">保存目录</label>
@@ -657,7 +657,7 @@
                                     <br /><span class="path-example">/home/strm/云盘1/剧集/北上(2025)/Season 01/S01E01.strm</span>
                                     <br />最终STRM文件内容:
                                     <br /><span class="path-example">http://127.0.0.1:5244/d/云盘/剧集/北上(2025)/Season 01/S01E01.mkv</span>
-                                    <br />生成全部STRM时，会从 Alist 目录 <span class="path-example">云盘</span> 开始遍历，并按同样规则写入账号本地目录。
+                                    <br />生成全部STRM时，会从 OpenList/Alist 目录 <span class="path-example">云盘</span> 开始遍历，并按同样规则写入账号本地目录。
                                 </small>
                             </div>
                         </div>
@@ -728,7 +728,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label>Alist 设置</label>
+                    <label>OpenList/Alist 设置</label>
                     <div class="proxy-settings" style="border: 1px solid var(--border-color);padding: 12px;">
                         <label style="display: flex;align-items: center;gap: 8px;margin-bottom: 0;width: 15%;">
                             <input type="checkbox" id="enableAlist" style="width: auto;">
@@ -736,7 +736,7 @@
                         </label>
                         <input type="text" id="alistServer" style="height: 32px; width: 40%;"
                             placeholder="例如: http://localhost:5244">
-                        <input type="text" id="alistApiKey" style="height: 32px;" placeholder="Alist 令牌">
+                        <input type="text" id="alistApiKey" style="height: 32px;" placeholder="OpenList/Alist 令牌">
                     </div>
                 </div>
 
@@ -1028,9 +1028,9 @@
                 <div class="help-text-container">
                     <button type="button" class="toggle-help-text" onclick="toggleHelpText(this)">显示帮助</button>
                     <small class="form-text">
-                        <p>此功能依赖Alist，将从选中账号的媒体目录开始递归生成STRM文件。</p>
+                        <p>此功能依赖OpenList/Alist，将从选中账号的媒体目录开始递归生成STRM文件。</p>
                         <p style="margin-top: 5px; font-size: 0.9em;">例如：配置项为
-                            http://alist:5244/d/我的云盘/媒体库，则会遍历Alist中的"我的云盘/媒体库"，并在本地目录下生成相同的相对目录结构。</p>
+                            http://alist:5244/d/我的云盘/媒体库，则会遍历OpenList/Alist中的"我的云盘/媒体库"，并在本地目录下生成相同的相对目录结构。</p>
                     </small>
                 </div>
             </div>

@@ -59,6 +59,21 @@ class StrmService {
         return parts.slice(1).join('/');
     }
 
+    _getPathParts(value = '') {
+        return this._normalizePath(value).split('/').filter(Boolean);
+    }
+
+    _stripCloudRootTail(fullPath, rootPath) {
+        const fullParts = this._getPathParts(fullPath);
+        const rootTailParts = this._getPathParts(rootPath).slice(1);
+        if (!fullParts.length || !rootTailParts.length || fullParts.length < rootTailParts.length) {
+            return null;
+        }
+        const hasRootTail = rootTailParts.every((part, index) => fullParts[index] === part);
+        if (!hasRootTail) return null;
+        return fullParts.slice(rootTailParts.length).join('/');
+    }
+
     _getRelativePath(fullPath, rootPath = '') {
         const normalizedFullPath = this._normalizePath(fullPath);
         const normalizedRootPath = this._normalizePath(rootPath);
@@ -68,6 +83,8 @@ class StrmService {
         if (normalizedFullPath.startsWith(`${normalizedRootPath}/`)) {
             return normalizedFullPath.slice(normalizedRootPath.length + 1);
         }
+        const relativeByRootTail = this._stripCloudRootTail(normalizedFullPath, normalizedRootPath);
+        if (relativeByRootTail !== null) return relativeByRootTail;
         return normalizedFullPath;
     }
 
@@ -319,7 +336,7 @@ class StrmService {
         }
         const sign = response?.data?.sign || '';
         if (!sign) {
-            throw new Error(`OpenList未返回签名: ${alistPath}`);
+            throw new Error(`OpenList/Alist未返回签名: ${alistPath}`);
         }
         return sign;
     }
@@ -442,13 +459,15 @@ class StrmService {
     }
 
     /**
-     * 批量生成STRM文件 根据Alist目录
+     * 批量生成STRM文件 根据OpenList/Alist目录
      * @param {string} startPath - 起始目录路径
      * @returns {Promise<object>} - 返回处理结果统计
      */
     async generateAll(accounts, overwrite = false) {
         if (!alistService.Enable()) {
-            throw new Error('Alist功能未启用');
+            const message = 'OpenList/Alist功能未启用，已跳过批量生成STRM';
+            logTaskEvent(message);
+            return message;
         }
         const messages = [];
         for(const account of accounts) {
@@ -492,7 +511,8 @@ class StrmService {
         }
         if (messages.length > 0) {
             this.messageUtil.sendMessage(messages.join('\n\n'));
-        }   
+        }
+        return messages.join('\n\n');
     }
 
     /**
@@ -503,10 +523,10 @@ class StrmService {
      * @private
      */
     async _processDirectory(dirPath, account, stats, mediaSuffixs, overwrite, rootPath = dirPath) {
-        // 获取alist文件列表
+        // 获取OpenList/Alist文件列表
         const alistResponse = await alistService.listFiles(dirPath);
         if (!alistResponse || !alistResponse.data) {
-            throw new Error(`获取Alist文件列表失败: ${dirPath}`);
+            throw new Error(`获取OpenList/Alist文件列表失败: ${dirPath}`);
         }
         if (!alistResponse.data.content) {
             return;

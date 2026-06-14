@@ -70,7 +70,12 @@ async function generateAllStrm(overwrite = false) {
                 overwrite: overwrite
             })
         });
-        message.success("执行中, 请稍后查看结果");
+        const data = await response.json();
+        if (data.success) {
+            message.success(data.data || "执行中, 请稍后查看结果");
+        } else {
+            message.error('生成STRM失败: ' + data.error);
+        }
     } catch (error) {
         message.error('生成STRM失败: ' + error.message);
     }

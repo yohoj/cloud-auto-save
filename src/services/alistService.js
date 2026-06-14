@@ -24,11 +24,11 @@ const alistService = {
         const apiKey = await this.getConfig('alist.apiKey');
 
         if (!baseUrl) {
-            throw new Error('AList baseUrl 未配置');
+            throw new Error('OpenList/Alist baseUrl 未配置');
         }
 
         if (!apiKey) {
-            throw new Error('AList apiKey 未配置');
+            throw new Error('OpenList/Alist apiKey 未配置');
         }
 
         try {
@@ -47,7 +47,7 @@ const alistService = {
             return response;
         } catch (error) {
             if (error.response) {
-                throw new Error(`AList API 错误: ${error.response.statusMessage}`);
+                throw new Error(`OpenList/Alist API 错误: ${error.response.statusMessage}`);
             }
             throw error;
         }
@@ -64,11 +64,11 @@ const alistService = {
         const apiKey = await this.getConfig('alist.apiKey');
 
         if (!baseUrl) {
-            throw new Error('AList baseUrl 未配置');
+            throw new Error('OpenList/Alist baseUrl 未配置');
         }
 
         if (!apiKey) {
-            throw new Error('AList apiKey 未配置');
+            throw new Error('OpenList/Alist apiKey 未配置');
         }
 
         try {
@@ -85,7 +85,7 @@ const alistService = {
             return response;
         } catch (error) {
             if (error.response) {
-                throw new Error(`AList API 错误: ${error.response.statusMessage}`);
+                throw new Error(`OpenList/Alist API 错误: ${error.response.statusMessage}`);
             }
             throw error;
         }

@@ -26,7 +26,7 @@
 
 - 支持生成 STRM 文件。
 - 支持按账号配置本地 STRM 路径、媒体库访问路径、Emby 路径替换。
-- 支持 OpenList/AList 签名链接校验与缓存刷新。
+- 支持 OpenList/Alist 签名链接校验与缓存刷新。
 - 支持 TMDB 刮削。
 - 支持 OpenAI 兼容接口进行资源识别和 AI 重命名。
 - 支持任务完成后通知 Emby 刷新媒体库。
@@ -208,7 +208,7 @@ Docker 容器内主要目录：
 
 | 字段 | 说明 |
 | --- | --- |
-| 媒体目录 | STRM 内容中写入的媒体访问路径，例如 OpenList/AList 的 `/d/云盘` 路径 |
+| 媒体目录 | STRM 内容中写入的媒体访问路径，例如 OpenList/Alist 的 `/d/云盘` 路径 |
 | 本地目录 | STRM 文件输出时对应的本地路径 |
 | Emby 路径替换 | Emby 删除事件回调时用于定位本地 STRM 文件 |
 
@@ -227,14 +227,14 @@ http://alist:5244/d/云盘
 
 如果媒体目录指向 OpenList-CAS，`.mkv.cas`、`.mp4.cas` 等 CAS 文件会生成 `文件名.(mkv).strm`、`文件名.(mp4).strm`，STRM 内容会追加 `type=cas_video` 以触发 OpenList-CAS 的临时恢复播放。
 
-## OpenList / AList
+## OpenList/Alist
 
 配置位置：媒体设置。
 
 | 配置 | 说明 |
 | --- | --- |
-| 服务器地址 | OpenList/AList 访问地址 |
-| API Key | OpenList/AList API Key |
+| 服务器地址 | OpenList/Alist 访问地址 |
+| API Key | OpenList/Alist API Key |
 
 用途：
 
@@ -471,7 +471,7 @@ API Key 可在系统设置中生成。
 检查：
 
 - 账号的“媒体目录”是否能被播放器或媒体服务访问。
-- OpenList/AList 地址和 API Key 是否正确。
+- OpenList/Alist 地址和 API Key 是否正确。
 - STRM 文件中的 URL 是否能在媒体服务所在网络访问。
 - 文件权限是否符合 NAS 或 Docker 用户要求。
 

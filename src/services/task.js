@@ -84,7 +84,44 @@ class TaskService {
         return {id: taskDto.targetFolderId, name: taskDto.targetFolder || ''};
     }
 
-    _getSelectedShareFolder(taskDto, shareInfo, shareDir) {
+    _getShareFolderId(folder = {}) {
+        return folder.id || folder.fileId || folder.fid || '';
+    }
+
+    _getShareFolderName(folder = {}) {
+        return folder.name || folder.fileName || folder.file_name || '';
+    }
+
+    async listShareFolders(cloud189, shareInfo, folderId, accessCode = '', parentPath = '') {
+        const result = await cloud189.listShareDir(shareInfo.shareId, folderId, shareInfo.shareMode, accessCode);
+        if (!result?.fileListAO) {
+            return [];
+        }
+
+        const folders = [];
+        const subFolders = result.fileListAO.folderList || [];
+        for (const folder of subFolders) {
+            const id = this._getShareFolderId(folder);
+            const folderName = this._getShareFolderName(folder);
+            if (!id || !folderName) continue;
+
+            const displayPath = this._joinRelativePath(parentPath, folderName);
+            const normalizedFolder = {
+                ...folder,
+                id,
+                name: displayPath,
+                folderName,
+                path: displayPath,
+                isParent: true,
+                pId: folderId
+            };
+            folders.push(normalizedFolder);
+            folders.push(...await this.listShareFolders(cloud189, shareInfo, id, accessCode, displayPath));
+        }
+        return folders;
+    }
+
+    async _getSelectedShareFolder(cloud189, taskDto, shareInfo) {
         const selectedFolders = Array.isArray(taskDto.selectedFolders)
             ? taskDto.selectedFolders.filter(Boolean)
             : [];
@@ -98,7 +135,7 @@ class TaskService {
             return { id: shareInfo.fileId, name: '' };
         }
 
-        const subFolders = shareDir?.fileListAO?.folderList || [];
+        const subFolders = await this.listShareFolders(cloud189, shareInfo, shareInfo.fileId, taskDto.accessCode);
         const selectedFolder = subFolders.find(folder => String(folder.id) === String(selectedFolderId));
         if (!selectedFolder) {
             throw new Error('选择的分享目录不存在');
@@ -111,7 +148,7 @@ class TaskService {
         const result = await cloud189.listShareDir(shareInfo.shareId, shareInfo.fileId, shareInfo.shareMode, taskDto.accessCode);
         if (!result?.fileListAO) throw new Error('获取分享目录失败');
 
-        const selectedFolder = this._getSelectedShareFolder(taskDto, shareInfo, result);
+        const selectedFolder = await this._getSelectedShareFolder(cloud189, taskDto, shareInfo);
         taskDto.realRootFolderId = targetFolder.id;
         const task = this.taskRepo.create(
             this._createTaskConfig(
@@ -248,7 +285,7 @@ class TaskService {
             await this.deleteCloudFile(cloud189, await this.getRootFolder(task), 1);
             // 删除strm
             strmService.deleteDir(strmPath)
-            // 刷新Alist缓存
+            // 刷新OpenList/Alist缓存
             await this.refreshAlistCache(task, true)
         }
         if (task.enableSystemProxy) {
@@ -348,6 +385,85 @@ class TaskService {
         }
 
         return await this._collectFolderFiles(cloud189, folderId, '', folderInfo, includeFolders);
+    }
+
+    _evaluateTransferCandidate(task, file, options) {
+        const {
+            existingFiles,
+            existingFileNames,
+            existingFolderNames,
+            enableOnlySaveMedia,
+            mediaSuffixs,
+            aiFiltered,
+            isQuarkTask
+        } = options;
+        const existsByMd5 = !file.isFolder && file.md5 ? existingFiles.has(file.md5) : false;
+        const existsByFileName = !file.isFolder && existingFileNames.has(file.name);
+        const existsByFolderName = file.isFolder && existingFolderNames.has(file.name);
+        const suffixPassed = file.isFolder || this._checkFileSuffix(file, enableOnlySaveMedia, mediaSuffixs);
+        const matchPassed = aiFiltered || this._handleMatchMode(task, file);
+        const harmonized = this.isHarmonized(file);
+        const folderAllowed = !file.isFolder || isQuarkTask;
+        const duplicatePassed = file.isFolder
+            ? folderAllowed && !existsByFolderName
+            : !existsByMd5 && !existsByFileName && suffixPassed;
+        const blockedBy = [];
+
+        if (file.isFolder) {
+            if (!folderAllowed) blockedBy.push('非夸克目录');
+            if (existsByFolderName) blockedBy.push('同名目录已存在');
+        } else {
+            if (existsByMd5) blockedBy.push('md5重复');
+            if (existsByFileName) blockedBy.push('同名文件已存在');
+            if (!suffixPassed) blockedBy.push('后缀不匹配');
+        }
+        if (!matchPassed) blockedBy.push('匹配规则不通过');
+        if (harmonized) blockedBy.push('和谐记录');
+
+        return {
+            transferable: duplicatePassed && matchPassed && !harmonized,
+            blockedBy,
+            existsByMd5,
+            existsByFileName,
+            existsByFolderName,
+            suffixPassed,
+            matchPassed,
+            harmonized
+        };
+    }
+
+    _logTransferFilterDiagnostics(task, filterResults, context) {
+        const counts = {
+            md5: 0,
+            fileName: 0,
+            folderName: 0,
+            suffix: 0,
+            match: 0,
+            harmonized: 0,
+            nonQuarkFolder: 0
+        };
+
+        for (const { status } of filterResults) {
+            if (status.blockedBy.includes('md5重复')) counts.md5++;
+            if (status.blockedBy.includes('同名文件已存在')) counts.fileName++;
+            if (status.blockedBy.includes('同名目录已存在')) counts.folderName++;
+            if (status.blockedBy.includes('后缀不匹配')) counts.suffix++;
+            if (status.blockedBy.includes('匹配规则不通过')) counts.match++;
+            if (status.blockedBy.includes('和谐记录')) counts.harmonized++;
+            if (status.blockedBy.includes('非夸克目录')) counts.nonQuarkFolder++;
+        }
+
+        const samples = filterResults.slice(0, 10).map(({ file, status }) => {
+            const type = file.isFolder ? '目录' : '文件';
+            const md5 = file.md5 ? `md5=${String(file.md5).slice(0, 12)}` : 'md5=空';
+            const reasons = status.blockedBy.length > 0 ? status.blockedBy.join('/') : '通过';
+            return `${type}:${file.name}(${md5})=>${reasons}`;
+        });
+
+        logTaskEvent(`${task.resourceName} 过滤详情: 目标文件${context.existingFileNames.size}个, 目标md5${context.existingFiles.size}个, 目标目录${context.existingFolderNames.size}个, 拦截统计: md5重复${counts.md5}, 同名文件${counts.fileName}, 同名目录${counts.folderName}, 后缀${counts.suffix}, 匹配规则${counts.match}, 和谐${counts.harmonized}, 非夸克目录${counts.nonQuarkFolder}`);
+        if (samples.length > 0) {
+            logTaskEvent(`${task.resourceName} 过滤样例: ${samples.join('；')}`);
+        }
     }
 
     // 自动创建目录
@@ -570,7 +686,9 @@ class TaskService {
                     return acc;
                 }
                 if (!file.isFolder) {
-                    acc.existingFiles.add(file.md5);
+                    if (file.md5) {
+                        acc.existingFiles.add(file.md5);
+                    }
                     acc.existingFileNames.add(file.name);
                     if ((task.totalEpisodes == null || task.totalEpisodes <= 0) || this._checkFileSuffix(file, true, mediaSuffixs)) {
                         acc.existingMediaCount++;
@@ -592,14 +710,22 @@ class TaskService {
                 }
             }
             
-            const newFiles = shareFiles
-                .filter(file => 
-                    (file.isFolder
-                        ? isQuarkTask && !existingFolderNames.has(file.name)
-                        : !existingFiles.has(file.md5) && !existingFileNames.has(file.name) && this._checkFileSuffix(file, enableOnlySaveMedia, mediaSuffixs))
-                   && (aiFiltered || this._handleMatchMode(task, file))
-                   && !this.isHarmonized(file)
-                );
+            const filterOptions = {
+                existingFiles,
+                existingFileNames,
+                existingFolderNames,
+                enableOnlySaveMedia,
+                mediaSuffixs,
+                aiFiltered,
+                isQuarkTask
+            };
+            const filterResults = shareFiles.map(file => ({
+                file,
+                status: this._evaluateTransferCandidate(task, file, filterOptions)
+            }));
+            const newFiles = filterResults
+                .filter(({ status }) => status.transferable)
+                .map(({ file }) => file);
 
             // 处理新文件并保存到数据库和云盘
             if (newFiles.length > 0) {
@@ -632,6 +758,11 @@ class TaskService {
                 logTaskEvent(`${task.resourceName} 没有增量剧集`)
             } else {
                 logTaskEvent(`${task.resourceName} 未发现可转存文件，源文件${sourceFileCount}个，源目录${sourceFolderCount}个，过滤后0个`)
+                this._logTransferFilterDiagnostics(task, filterResults, {
+                    existingFiles,
+                    existingFileNames,
+                    existingFolderNames
+                });
             }
             // 检查是否达到总数
             if (task.totalEpisodes && task.currentEpisodes >= task.totalEpisodes) {
@@ -928,7 +1059,9 @@ class TaskService {
         if (!task) {
             return false;
         }
-        logTaskEvent(`任务编号: ${task.taskId}, 任务状态: ${task.taskStatus}`)
+        const statusDetail = task.rawStatus !== undefined ? `, 原始状态: ${task.rawStatus}` : '';
+        const statusMessage = task.res_msg || task.resMsg || task.message || '';
+        logTaskEvent(`任务编号: ${task.taskId}, 任务状态: ${task.taskStatus}${statusDetail}${statusMessage ? `, 信息: ${statusMessage}` : ''}`)
         if (task.taskStatus == 3 || task.taskStatus == 1) {
             // 暂停200毫秒
             await new Promise(resolve => setTimeout(resolve, 200));
@@ -952,7 +1085,10 @@ class TaskService {
                     // 打印日志
                     logTaskEvent(`任务编号: ${task.taskId}, 任务状态: ${task.taskStatus}, 有${conflictFiles.length}个文件冲突, 已忽略: ${conflictFiles.map(file => file.fileName).join(',')}`);
                     // 加入和谐文件中
-                    harmonizedFilter.addHarmonizedList(conflictFiles.map(file => file.md5))
+                    const conflictMd5List = conflictFiles.map(file => file.md5).filter(Boolean);
+                    if (conflictMd5List.length > 0) {
+                        harmonizedFilter.addHarmonizedList(conflictMd5List)
+                    }
                 }
             }
             return true;
@@ -971,6 +1107,9 @@ class TaskService {
             await cloud189.manageBatchTask(taskId, conflictTaskInfo.targetFolderId, taskInfos);
             await new Promise(resolve => setTimeout(resolve, 200));
             return await this.checkTaskStatus(cloud189, taskId, count + 1, batchTaskDto)
+        }
+        if (statusMessage) {
+            logTaskEvent(`批量任务失败原因: ${statusMessage}`);
         }
         return false;
     }
@@ -1356,17 +1495,18 @@ class TaskService {
             shareInfo.shareId = accessCodeResponse.shareId;
         }
         const folders = []
-        folders.push({id: shareInfo.fileId, name: shareInfo.fileName})
+        folders.push({
+            id: shareInfo.fileId,
+            name: shareInfo.fileName,
+            folderName: shareInfo.fileName,
+            path: shareInfo.fileName,
+            isParent: true
+        })
         if (!shareInfo.isFolder) {
             return folders;
         }
-        // 遍历分享链接的目录
-        const result = await cloud189.listShareDir(shareInfo.shareId, shareInfo.fileId, shareInfo.shareMode, accessCode);
-        if (!result?.fileListAO) return folders;
-        const { folderList: subFolders = [] } = result.fileListAO;
-        subFolders.forEach(folder => {
-            folders.push({id: folder.id, name: path.join(shareInfo.fileName, folder.name)});
-        });
+        const subFolders = await this.listShareFolders(cloud189, shareInfo, shareInfo.fileId, accessCode, shareInfo.fileName);
+        folders.push(...subFolders);
         return folders;
     }
 
@@ -1420,6 +1560,9 @@ class TaskService {
     }
     // 根据布隆过滤器判断是否被和谐
     isHarmonized(file) {
+        if (!file.md5) {
+            return false;
+        }
         // 检查资源是否被和谐
         if (harmonizedFilter.isHarmonized(file.md5)) {
             logTaskEvent(`文件 ${file.name} 被和谐`);
@@ -1452,7 +1595,7 @@ class TaskService {
         }
     }
 
-    // 根据任务刷新Alist缓存
+    // 根据任务刷新OpenList/Alist缓存
     async refreshAlistCache(task, firstExecution = false) {
         try{
             if (ConfigService.getConfigValue('alist.enable') && !task.enableSystemProxy && task.account.cloudStrmPrefix) {
@@ -1472,11 +1615,11 @@ class TaskService {
                     // 非首次只刷新当前目录
                     refreshPath = strmService.getAccountAlistPath(task.account, taskRelativePath);
                 }
-                logTaskEvent(`刷新alist目录缓存: ${refreshPath}`);
+                logTaskEvent(`刷新OpenList/Alist目录缓存: ${refreshPath}`);
                 await alistService.listFiles(refreshPath);
             }
         }catch (error) {
-            logTaskEvent(`刷新Alist缓存失败: ${error.message}`);
+            logTaskEvent(`刷新OpenList/Alist缓存失败: ${error.message}`);
         }
     }
 

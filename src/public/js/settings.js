@@ -90,7 +90,7 @@ async function loadSettings() {
             document.getElementById('openaiTemplate').value = settings.openai?.rename?.template || '';
             document.getElementById('openaiMovieTemplate').value = settings.openai?.rename?.movieTemplate || '';
 
-            // alist
+            // OpenList/Alist
             document.getElementById('enableAlist').checked = settings.alist?.enable || false;
             document.getElementById('alistServer').value = settings.alist?.baseUrl || '';
             document.getElementById('alistApiKey').value = secretInputValue(settings.alist?.apiKey);

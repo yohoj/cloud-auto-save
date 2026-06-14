@@ -64,7 +64,7 @@ class TaskEventHandler {
             await taskService.refreshAlistCache(task, firstExecution)
         } catch (error) {
             console.error(error);
-            logTaskEvent(`刷新Alist缓存失败: ${error.message}`);
+            logTaskEvent(`刷新OpenList/Alist缓存失败: ${error.message}`);
         }
     }
 

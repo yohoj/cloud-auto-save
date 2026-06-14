@@ -320,11 +320,22 @@ class QuarkService {
             searchParams: { task_id: taskId }
         });
         if (!response || response.status !== 200) return null;
-        const status = response.data?.status || response.data?.task_status;
+        const data = response.data || {};
+        const status = data.status ?? data.task_status;
+        let taskStatus = 3;
+        if (status === 2 || status === 'success' || status === 'done' || status === 'finished') {
+            taskStatus = 4;
+        } else if (status === 0 || status === 1 || status === 'running' || status === 'processing' || status === 'pending') {
+            taskStatus = 1;
+        } else if (status === 3 || status === 'fail' || status === 'failed' || status === 'error') {
+            taskStatus = 5;
+        }
         return {
             taskId,
-            taskStatus: status === 2 || status === 'success' ? 4 : 3,
-            failedCount: 0
+            taskStatus,
+            rawStatus: status,
+            failedCount: data.failed_count || data.fail_count || 0,
+            resMsg: data.message || data.error_msg || data.err_msg || response.message || ''
         };
     }
 
@@ -378,11 +389,12 @@ class QuarkService {
 
     normalizeFile(item) {
         const size = item.size || item.file_size || 0;
+        const md5 = item.md5 || item.file_md5 || item.content_hash || item.hash || '';
         return {
             id: item.fid,
             name: item.file_name,
             fileName: item.file_name,
-            md5: item.obj_category || item.share_fid_token || item.fid,
+            md5,
             size,
             isFolder: !!item.dir,
             shareFidToken: item.share_fid_token,

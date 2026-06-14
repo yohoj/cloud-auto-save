@@ -4,6 +4,86 @@ let taskFilterParams = {
     search: ''
 };
 
+let parsedShareFolders = [];
+
+function setCreateShareFolder(folder) {
+    const folderInput = document.getElementById('createShareFolder');
+    const folderIdInput = document.getElementById('createShareFolderId');
+    if (!folderInput || !folderIdInput || !folder) return;
+
+    folderInput.value = folder.name || '';
+    folderIdInput.value = folder.id || '';
+}
+
+function clearCreateShareFolder() {
+    parsedShareFolders = [];
+    const folderInput = document.getElementById('createShareFolder');
+    const folderIdInput = document.getElementById('createShareFolderId');
+    if (folderInput) folderInput.value = '';
+    if (folderIdInput) folderIdInput.value = '';
+    document.querySelector('.share-folder-picker-modal')?.remove();
+}
+
+function closeCreateShareFolderPicker() {
+    document.querySelector('.share-folder-picker-modal')?.remove();
+}
+
+function openCreateShareFolderPicker() {
+    if (!parsedShareFolders.length) {
+        message.warning('请先解析分享链接');
+        return;
+    }
+
+    closeCreateShareFolderPicker();
+    const currentFolderId = document.getElementById('createShareFolderId')?.value || parsedShareFolders[0].id;
+    let selectedIndex = Math.max(0, parsedShareFolders.findIndex(folder => String(folder.id) === String(currentFolderId)));
+    const modal = document.createElement('div');
+    modal.className = 'modal share-folder-picker-modal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>选择分享目录</h3>
+            </div>
+            <div class="form-body">
+                <div class="folder-tree">
+                    ${parsedShareFolders.map((folder, index) => `
+                        <div class="folder-tree-item ${index === selectedIndex ? 'selected' : ''}" data-share-folder-index="${index}">
+                            <span class="folder-icon">📁</span>
+                            <span class="folder-name">${escapeHtml(folder.name || '')}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn-primary" data-action="confirm-share-folder">确定</button>
+                <button type="button" class="btn-default" data-action="cancel-share-folder">取消</button>
+            </div>
+        </div>
+    `;
+
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            closeCreateShareFolderPicker();
+        }
+    });
+    modal.querySelectorAll('[data-share-folder-index]').forEach(item => {
+        item.addEventListener('click', () => {
+            selectedIndex = parseInt(item.dataset.shareFolderIndex, 10);
+            modal.querySelectorAll('.folder-tree-item').forEach(node => node.classList.remove('selected'));
+            item.classList.add('selected');
+        });
+    });
+    modal.querySelector('[data-action="confirm-share-folder"]').addEventListener('click', () => {
+        setCreateShareFolder(parsedShareFolders[selectedIndex]);
+        closeCreateShareFolderPicker();
+    });
+    modal.querySelector('[data-action="cancel-share-folder"]').addEventListener('click', closeCreateShareFolderPicker);
+
+    document.body.appendChild(modal);
+    modal.style.display = 'flex';
+    modal.style.zIndex = 1001;
+}
+
 
 // 任务相关功能
 function createProgressRing(current, total) {
@@ -237,7 +317,7 @@ function openCreateTaskModal() {
 
 function closeCreateTaskModal() {
     document.querySelector('.share-folders-group').style.display = 'none';
-    document.getElementById('shareFoldersList').innerHTML = '';;
+    clearCreateShareFolder();
     document.getElementById('createTaskModal').style.display = 'none';
     document.getElementById('taskName').readOnly = true
     document.getElementById('taskForm').reset();
@@ -253,6 +333,11 @@ function initTaskForm() {
     shareInputs.forEach(input => {
         input.addEventListener('blur', debouncedHandleShare);
         input.addEventListener('input', syncCreateTaskAccountOptions);
+    });
+
+    document.getElementById('createShareFolder').addEventListener('click', (e) => {
+        e.preventDefault();
+        openCreateShareFolderPicker();
     });
 
     // 修改原有的表单提交处理
@@ -296,12 +381,13 @@ function initTaskForm() {
             return;
         }
         // 获取选中的分享目录
-        const selectedShareFolder = document.querySelector('input[name="chooseShareFolder"]:checked');
+        const selectedShareFolderId = document.getElementById('createShareFolderId').value;
+        const selectedShareFolder = parsedShareFolders.find(folder => String(folder.id) === String(selectedShareFolderId));
         if (!selectedShareFolder) {
             message.warning('请选择一个分享目录');
             return;
         }
-        const selectedFolders = [selectedShareFolder.value];
+        const selectedFolders = [selectedShareFolder.id];
         const body = { accountId, shareLink, totalEpisodes, targetFolderId, accessCode, matchPattern, matchOperator, matchValue, overwriteFolder: 0, remark, enableCron, cronExpression, targetFolder, selectedFolders, sourceRegex, targetRegex, taskName, enableTaskScraper };
         await createTask(e,body)
             
@@ -989,7 +1075,6 @@ async function parseShareLink() {
         document.getElementById('accessCode').value = accessCode;
     }
     const shareFoldersGroup = document.querySelector('.share-folders-group');
-    const shareFoldersList = document.getElementById('shareFoldersList');
     try {
         loading.show()
         const response = await fetch('/api/share/parse', {
@@ -1000,32 +1085,27 @@ async function parseShareLink() {
         loading.hide()
         const data = await response.json();
         if (data.success) {
-            shareFoldersGroup.style.display = 'block';
-            shareFoldersList.innerHTML = data.data.map((folder, index) => `
-                <div class="folder-item">
-                    <label>
-                        <input type="radio" name="chooseShareFolder" value="${escapeHtml(folder.id)}" ${index === 0 ? 'checked' : ''}>
-                        ${escapeHtml(folder.name)}
-                    </label>
-                </div>
-            `).join('');
-             // 如果有分享目录数据，使用第一个目录名称作为任务名称
-            if (data.data && data.data.length > 0) {
-                const taskName = document.getElementById('taskName')
-                taskName.value = data.data[0].name;
-                // 移除taskName的只读
-                taskName.readOnly = false;
+            parsedShareFolders = data.data || [];
+            if (parsedShareFolders.length === 0) {
+                throw new Error('未解析到分享目录');
             }
+            shareFoldersGroup.style.display = 'block';
+            setCreateShareFolder(parsedShareFolders[0]);
+             // 如果有分享目录数据，使用第一个目录名称作为任务名称
+            const taskName = document.getElementById('taskName')
+            taskName.value = parsedShareFolders[0].folderName || parsedShareFolders[0].name;
+            // 移除taskName的只读
+            taskName.readOnly = false;
         } else {
             shareFoldersGroup.style.display = 'none';
-            shareFoldersList.innerHTML = '';
+            clearCreateShareFolder();
             if (data.error) {
                 shareParseError.textContent = `解析失败: ${data.error}`;
             }
         }
     } catch (error) {
         shareFoldersGroup.style.display = 'none';
-        shareFoldersList.innerHTML = '';
+        clearCreateShareFolder();
         shareParseError.textContent = `操作失败: ${error.message}`;
     }
 }

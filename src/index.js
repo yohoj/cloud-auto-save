@@ -865,11 +865,19 @@ AppDataSource.initialize().then(async () => {
             }
             const cloud189 = CloudUtils.getService(account);
             // 查询分享目录
-            const shareDir = await cloud189.listShareDir(task.shareId, req.query.folderId, task.shareMode);
-            if (!shareDir || !shareDir.fileListAO) {
-                res.json({ success: true, data: [] });    
-            }
-            const folders = shareDir.fileListAO.folderList;
+            const folders = await taskService.listShareFolders(
+                cloud189,
+                {
+                    shareId: task.shareId,
+                    fileId: task.shareFileId,
+                    shareMode: task.shareMode
+                },
+                folderId,
+                task.accessCode || ''
+            );
+            folders.forEach(folder => {
+                folder.disableExpand = true;
+            });
             folderCache.set(cacheKey, folders);
             res.json({ success: true, data: folders });
         } catch (error) {
@@ -1140,8 +1148,8 @@ AppDataSource.initialize().then(async () => {
                 }
             });
             const strmService = new StrmService();
-            strmService.generateAll(accounts, overwrite);
-            res.json({ success: true, data: null });
+            const message = await strmService.generateAll(accounts, overwrite);
+            res.json({ success: true, data: message });
         } catch (error) {
             res.json({ success: false, error: error.message });
         }
