@@ -52,7 +52,6 @@ class ConfigService {
           telegram: true,
           tmdb: true,
           openai: true,
-          cloud189: false,
           quark: false,
           customPush: false
         }
@@ -190,6 +189,10 @@ class ConfigService {
     let changed = false;
     if (this._config.task?.mediaSuffix === OLD_DEFAULT_MEDIA_SUFFIX) {
       this._config.task.mediaSuffix = DEFAULT_MEDIA_SUFFIX;
+      changed = true;
+    }
+    if (this._config.proxy?.services && Object.prototype.hasOwnProperty.call(this._config.proxy.services, 'cloud189')) {
+      delete this._config.proxy.services.cloud189;
       changed = true;
     }
     return changed;

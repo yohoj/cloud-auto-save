@@ -1,4 +1,49 @@
+const fs = require('fs');
+
 class Cloud189Utils {
+    static normalizeUsername(username) {
+        const value = (username || '').trim();
+        const match = value.match(/^(\d{11})@189\.cn$/i);
+        return match ? match[1] : value;
+    }
+
+    static isSameAccount(usernameA, usernameB) {
+        return this.normalizeUsername(usernameA).toLowerCase() === this.normalizeUsername(usernameB).toLowerCase();
+    }
+
+    static getTokenFilePath(username) {
+        const normalizedUsername = this.normalizeUsername(username);
+        if (!normalizedUsername || /[\\/]/.test(normalizedUsername)) {
+            throw new Error('无效的天翼云盘账号');
+        }
+        const tokenFilePath = `data/${normalizedUsername}.json`;
+        const legacyUsername = (username || '').trim();
+        const legacyTokenFilePath = `data/${legacyUsername}.json`;
+        if (legacyTokenFilePath !== tokenFilePath && !/[\\/]/.test(legacyUsername) && fs.existsSync(legacyTokenFilePath)) {
+            if (!fs.existsSync(tokenFilePath)) {
+                fs.copyFileSync(legacyTokenFilePath, tokenFilePath);
+            } else {
+                const token = this._readTokenFile(tokenFilePath);
+                const legacyToken = this._readTokenFile(legacyTokenFilePath);
+                if (legacyToken?.accessToken && Number(legacyToken.expiresIn || 0) > Number(token?.expiresIn || 0)) {
+                    fs.writeFileSync(tokenFilePath, JSON.stringify({
+                        ...legacyToken,
+                        refreshToken: legacyToken.refreshToken || token?.refreshToken || ''
+                    }));
+                }
+            }
+        }
+        return tokenFilePath;
+    }
+
+    static _readTokenFile(filePath) {
+        try {
+            return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        } catch (error) {
+            return null;
+        }
+    }
+
     // 解析分享码
     static parseShareCode(shareLink) {
         // 解析分享链接

@@ -41,7 +41,6 @@ async function loadSettings() {
             document.getElementById('proxyTelegram').checked = settings.proxy?.services?.telegram || false;
             document.getElementById('proxyTmdb').checked = settings.proxy?.services?.tmdb || false;
             document.getElementById('proxyOpenAI').checked = settings.proxy?.services?.openai || false;
-            document.getElementById('proxyCloud189').checked = settings.proxy?.services?.cloud189 || false;
             document.getElementById('proxyCustomPush').checked = settings.proxy?.services?.customPush || false;
             // Bark 设置
             document.getElementById('enableBark').checked = settings.bark?.enable || false;
@@ -162,7 +161,6 @@ async function saveSettings() {
                 telegram: document.getElementById('proxyTelegram').checked,
                 tmdb: document.getElementById('proxyTmdb').checked,
                 openai: document.getElementById('proxyOpenAI').checked,
-                cloud189: document.getElementById('proxyCloud189').checked,
                 customPush: document.getElementById('proxyCustomPush').checked
             }
         },

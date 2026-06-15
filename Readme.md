@@ -39,7 +39,7 @@
 - 支持自定义推送，可配置请求方法、URL、请求头和模板。
 - 支持 Telegram Bot 直接发送分享链接创建任务。
 - 支持 CloudSaver 对接。
-- 支持按服务配置代理：Telegram、TMDB、OpenAI、天翼云盘、夸克网盘、自定义推送。
+- 支持按服务配置代理：Telegram、TMDB、OpenAI、夸克网盘、自定义推送。
 
 ### 管理界面
 
@@ -376,7 +376,6 @@ Emby 删除媒体时，本系统可根据路径映射删除对应 STRM 文件。
 - Telegram。
 - TMDB。
 - OpenAI。
-- 天翼云盘。
 - 夸克网盘。
 - 自定义推送。
 

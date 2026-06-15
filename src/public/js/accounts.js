@@ -200,10 +200,22 @@ function initAccountForm() {
 function openAddAccountModal() {
     chooseAccount = null
     resetCloud189QrLogin();
+    resetAccountCaptcha();
     const modal = document.getElementById('addAccountModal');
     modal.style.display = 'block';
     document.getElementById('cloudType').value = 'cloud189';
     updateAccountFormByCloudType();
+}
+
+function resetAccountCaptcha() {
+    const captchaGroup = document.getElementById('account-captcha');
+    const captchaImage = document.getElementById('captchaImage');
+    const validateCode = document.getElementById('validateCode');
+    const captchaId = document.getElementById('cloud189CaptchaId');
+    if (captchaGroup) captchaGroup.style.display = 'none';
+    if (captchaImage) captchaImage.src = '';
+    if (validateCode) validateCode.value = '';
+    if (captchaId) captchaId.value = '';
 }
 
 function closeAddAccountModal() {
@@ -219,11 +231,7 @@ function closeAddAccountModal() {
     document.getElementById('accountForm').reset();
     document.getElementById('cloudType').value = 'cloud189';
     updateAccountFormByCloudType();
-    // 移除可能存在的验证码容器
-    const captchaContainer = document.querySelector('.captcha-container');
-    if (captchaContainer) {
-        captchaContainer.remove();
-    }
+    resetAccountCaptcha();
     chooseAccount = null
 }
 
@@ -235,6 +243,7 @@ async function editAccount(id) {
         return;
     }
     resetCloud189QrLogin();
+    resetAccountCaptcha();
 
     // 打开模态框
     const modal = document.getElementById('addAccountModal');
@@ -276,6 +285,7 @@ async function createAccount() {
     if (validateCodeDom) {
         validateCode = validateCodeDom.value;
     }
+    const captchaId = document.getElementById('cloud189CaptchaId')?.value || '';
     if (!username ) {
         message.warning('用户名不能为空');
         return;
@@ -295,7 +305,7 @@ async function createAccount() {
     const response = await fetch('/api/accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: chooseAccount?.id, cloudType, username, password, cookies, qrLoginId, alias, validateCode, cloudStrmPrefix, localStrmPrefix, embyPathReplace })
+        body: JSON.stringify({ id: chooseAccount?.id, cloudType, username, password, cookies, qrLoginId, alias, validateCode, captchaId, cloudStrmPrefix, localStrmPrefix, embyPathReplace })
     });
     const data = await response.json();
     if (data.success) {
@@ -306,6 +316,7 @@ async function createAccount() {
             // 移除验证码容器
             document.getElementById('account-captcha').style.display = 'none';
             validateCodeDom.value = ''
+            document.getElementById('cloud189CaptchaId').value = ''
         }
         closeAddAccountModal();
         fetchAccounts(true);
@@ -316,6 +327,7 @@ async function createAccount() {
             // 展示二维码
             document.getElementById('account-captcha').style.display = 'block';
             document.getElementById('captchaImage').src = data.data.captchaUrl;
+            document.getElementById('cloud189CaptchaId').value = data.data.captchaId || '';
             message.warning('请输入验证码后重新提交');
         }else{
             message.warning('账号添加失败: ' + data.error);

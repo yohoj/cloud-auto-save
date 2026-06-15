@@ -4,6 +4,7 @@ const { AppDataSource } = require('./database');
 const { Account, Task, CommonFolder } = require('./entities');
 const { TaskService } = require('./services/task');
 const CloudUtils = require('./utils/CloudUtils');
+const Cloud189Utils = require('./utils/Cloud189Utils');
 const { MessageUtil } = require('./services/message');
 const { CacheManager } = require('./services/CacheManager')
 const ConfigService = require('./services/ConfigService');
@@ -406,7 +407,7 @@ AppDataSource.initialize().then(async () => {
                 throw new Error(tokenSession.res_message || tokenSession.message || '二维码登录未返回有效会话');
             }
             tokenSession.refreshToken = tokenSession.refreshToken || accessTokenResp.refreshToken || accessTokenResp.refresh_token || '';
-            const username = tokenSession.loginName;
+            const username = Cloud189Utils.normalizeUsername(tokenSession.loginName);
             assertSafeCloud189Username(username);
             qrLogin.tokenSession = tokenSession;
             qrLogin.username = username;
@@ -441,7 +442,7 @@ AppDataSource.initialize().then(async () => {
             let account = accountRepo.create(req.body);
             if (qrLogin) {
                 account.cloudType = 'cloud189';
-                account.username = qrLogin.username;
+                account.username = Cloud189Utils.normalizeUsername(qrLogin.username);
                 account.password = '';
                 account.cookies = '';
             }
@@ -450,11 +451,11 @@ AppDataSource.initialize().then(async () => {
                 if (!existingAccount) throw new Error('账号不存在');
                 account = accountRepo.merge(existingAccount, req.body);
                 if (qrLogin) {
-                    if (qrLogin.username !== existingAccount.username) {
+                    if (!Cloud189Utils.isSameAccount(qrLogin.username, existingAccount.username)) {
                         throw new Error('二维码登录账号与当前账号不一致');
                     }
                     account.cloudType = 'cloud189';
-                    account.username = existingAccount.username;
+                    account.username = Cloud189Utils.normalizeUsername(existingAccount.username);
                     account.password = '';
                     account.cookies = '';
                 }
@@ -468,6 +469,21 @@ AppDataSource.initialize().then(async () => {
             account.cloudType = account.cloudType || (account.username.startsWith('q_') ? 'quark' : 'cloud189');
             if (!['cloud189', 'quark'].includes(account.cloudType)) {
                 throw new Error('无效的网盘类型');
+            }
+            if (CloudUtils.isCloud189Account(account)) {
+                account.username = Cloud189Utils.normalizeUsername(account.username);
+                assertSafeCloud189Username(account.username);
+                const accounts = await accountRepo.find();
+                const duplicatedAccount = accounts.find(existingAccount => {
+                    if (account.id && existingAccount.id === Number(account.id)) {
+                        return false;
+                    }
+                    return CloudUtils.isCloud189Account(existingAccount) &&
+                        Cloud189Utils.isSameAccount(existingAccount.username, account.username);
+                });
+                if (duplicatedAccount) {
+                    throw new Error('该天翼云盘账号已存在');
+                }
             }
             if (CloudUtils.isQuarkAccount(account)) {
                 if (!account.cookies) {
@@ -483,15 +499,13 @@ AppDataSource.initialize().then(async () => {
             if (CloudUtils.isCloud189Account(account) && !account.username.startsWith('n_') && req.body.password) {
                 // 尝试登录
                 const cloud189 = CloudUtils.getService(account);
-                const loginResult = await cloud189.login(account.username, account.password, req.body.validateCode);
+                const loginResult = await cloud189.login(account.username, account.password, req.body.validateCode, req.body.captchaId);
                 if (!loginResult.success) {
                     if (loginResult.code == "NEED_CAPTCHA") {
                         res.json({
                             success: false,
                             code: "NEED_CAPTCHA",
-                            data: {
-                                captchaUrl: loginResult.data
-                            }
+                            data: loginResult.data
                         });
                         return;
                     }
@@ -500,10 +514,11 @@ AppDataSource.initialize().then(async () => {
                 }
             }
             if (qrLogin) {
-                const tokenStore = new FileTokenStore(`data/${account.username}.json`);
+                const tokenStore = new FileTokenStore(Cloud189Utils.getTokenFilePath(qrLogin.tokenSession.loginName || account.username));
+                const existingToken = await tokenStore.get();
                 await tokenStore.update({
                     accessToken: qrLogin.tokenSession.accessToken,
-                    refreshToken: qrLogin.tokenSession.refreshToken || '',
+                    refreshToken: qrLogin.tokenSession.refreshToken || existingToken.refreshToken || '',
                     expiresIn: Date.now() + CLOUD189_TOKEN_TTL_MS
                 });
                 cloud189QrLogins.delete(qrLoginId);
@@ -970,10 +985,11 @@ AppDataSource.initialize().then(async () => {
         const settings = req.body;
         SchedulerService.handleScheduleTasks(settings,taskService);
         ConfigService.setConfig(settings)
+        const savedSettings = ConfigService.getConfig();
         await botManager.handleBotStatus(
-            settings.telegram?.bot?.botToken,
-            settings.telegram?.bot?.chatId,
-            settings.telegram?.bot?.enable
+            savedSettings.telegram?.bot?.botToken,
+            savedSettings.telegram?.bot?.chatId,
+            savedSettings.telegram?.bot?.enable
         );
         // 修改配置, 重新实例化消息推送
         messageUtil.updateConfig()

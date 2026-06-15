@@ -1,8 +1,10 @@
 const { CloudClient, FileTokenStore } = require('cloud189-sdk');
 const { logTaskEvent } = require('../utils/logUtils');
+const Cloud189Utils = require('../utils/Cloud189Utils');
 const crypto = require('crypto');
 const got = require('got');
-const ProxyUtil = require('../utils/ProxyUtil');
+const { rsaEncrypt } = require('cloud189-sdk/dist/util');
+const { AUTH_URL, AppID, AccountType, ReturnURL } = require('cloud189-sdk/dist/const');
 
 const CLOUD189_SESSION_ERROR = '天翼云盘登录态失效，请在账号设置中重新扫码登录，或补充账号密码/有效 SSON Cookie。';
 const CLOUD189_TV_API_URL = 'https://api.cloud.189.cn';
@@ -67,7 +69,6 @@ async function getCloud189TvSession(accessToken) {
             ...CLOUD189_TV_HEADERS,
             ...getCloud189TvSignatureHeaders(url, method)
         },
-        agent: ProxyUtil.getProxyAgent('cloud189'),
         dnsLookupIpVersion: 'ipv4',
         timeout: { request: 30000 }
     }).json();
@@ -75,9 +76,11 @@ async function getCloud189TvSession(accessToken) {
 
 class Cloud189Service {
     static instances = new Map();
+    static captchaSessions = new Map();
+    static captchaSessionTtlMs = 5 * 60 * 1000;
 
     static getInstance(account) {
-        const key = account.username;
+        const key = Cloud189Utils.normalizeUsername(account.username);
         if (!this.instances.has(key)) {
             this.instances.set(key, new Cloud189Service(account));
         }
@@ -85,18 +88,28 @@ class Cloud189Service {
     }
 
     static removeInstance(username) {
-        this.instances.delete(username);
+        this.instances.delete(Cloud189Utils.normalizeUsername(username));
+    }
+
+    static cleanupCaptchaSessions() {
+        const now = Date.now();
+        for (const [id, session] of this.captchaSessions.entries()) {
+            if (session.expiresAt < now) {
+                this.captchaSessions.delete(id);
+            }
+        }
     }
 
     constructor(account) {
         this.account = account;
-        this.client = this._createClient(account, ProxyUtil.getProxy('cloud189'));
+        this.client = this._createClient(account);
     }
 
-    _createClient(account, proxy) {
-        const tokenStore = new FileTokenStore(`data/${account.username}.json`);
+    _createClient(account) {
+        const username = Cloud189Utils.normalizeUsername(account.username);
+        const tokenStore = new FileTokenStore(Cloud189Utils.getTokenFilePath(username));
         const _options = {
-            username: account.username,
+            username,
             password: account.password,
             token: tokenStore
         }
@@ -104,7 +117,6 @@ class Cloud189Service {
             _options.ssonCookie = normalizeSsonCookie(account.cookies)
             _options.password = null
         }
-        _options.proxy = proxy
         const client = new CloudClient(_options);
         client.request = client.request.extend({
             dnsLookupIpVersion: 'ipv4'
@@ -135,22 +147,6 @@ class Cloud189Service {
             }
             return await originalGetSession();
         };
-    }
-
-    // 重新给所有实例设置代理
-    static setProxy() {
-        const proxyUrl = ProxyUtil.getProxy('cloud189')
-        this.instances.forEach(instance => {
-            instance.setProxy(proxyUrl);
-        });
-    }
-
-    setProxy(proxyUrl) {
-        if (typeof this.client?.setProxy === 'function') {
-            this.client.setProxy(proxyUrl);
-            return;
-        }
-        this.client = this._createClient(this.account, proxyUrl);
     }
 
     // 封装统一请求
@@ -434,7 +430,6 @@ class Cloud189Service {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0'
             },
-            agent: ProxyUtil.getProxyAgent('cloud189'),
             dnsLookupIpVersion: 'ipv4',
             timeout: { request: 30000 }
         });
@@ -447,7 +442,6 @@ class Cloud189Service {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0'
             },
-            agent: ProxyUtil.getProxyAgent('cloud189'),
             dnsLookupIpVersion: 'ipv4',
             timeout: { request: 30000 }
         }).text();
@@ -465,26 +459,117 @@ class Cloud189Service {
         })
         return response
     }
-    async login(username, password, validateCode) {
+    _buildPasswordLoginForm(encrypt, appConf, username, password, validateCode = '') {
+        return {
+            appKey: AppID,
+            accountType: AccountType,
+            validateCode,
+            captchaToken: appConf.captchaToken,
+            dynamicCheck: 'FALSE',
+            clientType: '1',
+            cb_SaveName: '3',
+            isOauth2: false,
+            returnUrl: ReturnURL,
+            paramId: appConf.paramId,
+            userName: `${encrypt.pre}${rsaEncrypt(encrypt.pubKey, username)}`,
+            password: `${encrypt.pre}${rsaEncrypt(encrypt.pubKey, password)}`
+        };
+    }
+
+    _getCaptchaUrl(appConf) {
+        return `${AUTH_URL}/api/logbox/oauth2/picCaptcha.do?token=${encodeURIComponent(appConf.captchaToken)}`;
+    }
+
+    async _createPasswordLoginSession() {
+        const [encryptRes, appConf] = await Promise.all([
+            this.client.authClient.getEncrypt(),
+            this.client.authClient.getLoginForm()
+        ]);
+        return {
+            encrypt: encryptRes.data,
+            appConf,
+            expiresAt: Date.now() + Cloud189Service.captchaSessionTtlMs
+        };
+    }
+
+    _saveCaptchaSession(session) {
+        Cloud189Service.cleanupCaptchaSessions();
+        const captchaId = crypto.randomUUID();
+        Cloud189Service.captchaSessions.set(captchaId, session);
+        return captchaId;
+    }
+
+    _captchaResult(session, message) {
+        const captchaId = this._saveCaptchaSession({
+            ...session,
+            expiresAt: Date.now() + Cloud189Service.captchaSessionTtlMs
+        });
+        return {
+            success: false,
+            code: 'NEED_CAPTCHA',
+            message: message || '请输入验证码',
+            data: {
+                captchaId,
+                captchaUrl: this._getCaptchaUrl(session.appConf)
+            }
+        };
+    }
+
+    async login(username, password, validateCode, captchaId) {
         try {
-            const loginToken = await this.client.authClient.loginByPassword(username, password, validateCode)
+            Cloud189Service.cleanupCaptchaSessions();
+            let loginSession = captchaId ? Cloud189Service.captchaSessions.get(captchaId) : null;
+            if (captchaId && !loginSession) {
+                return this._captchaResult(await this._createPasswordLoginSession(), '验证码已过期，请重新输入');
+            }
+            if (!loginSession) {
+                loginSession = await this._createPasswordLoginSession();
+            }
+
+            const loginForm = this._buildPasswordLoginForm(
+                loginSession.encrypt,
+                loginSession.appConf,
+                username,
+                password,
+                validateCode
+            );
+            const loginRes = await got.post(`${AUTH_URL}/api/logbox/oauth2/loginSubmit.do`, {
+                headers: {
+                    Referer: AUTH_URL,
+                    lt: loginSession.appConf.lt,
+                    REQID: loginSession.appConf.reqId
+                },
+                form: loginForm,
+                dnsLookupIpVersion: 'ipv4',
+                timeout: { request: 30000 }
+            }).json();
+
+            if (!loginRes.toUrl) {
+                const message = loginRes.msg || loginRes.message || '登录失败';
+                const resultCode = Number(loginRes.result);
+                if (/验证码|captcha/i.test(message) || resultCode === -8 || resultCode === -13) {
+                    return this._captchaResult(await this._createPasswordLoginSession(), message);
+                }
+                return {
+                    success: false,
+                    code: 'LOGIN_ERROR',
+                    message
+                };
+            }
+
+            const loginToken = await this.client.authClient.getSessionForPC({ redirectURL: loginRes.toUrl });
             await this.client.tokenStore.update({
                 accessToken: loginToken.accessToken,
                 refreshToken: loginToken.refreshToken,
                 expiresIn: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).getTime()
             })
+            if (captchaId) {
+                Cloud189Service.captchaSessions.delete(captchaId);
+            }
             return {
                 success: true
             }
         } catch (error) {
-            // 处理需要验证码的情况
-            if (error.code === 'NEED_CAPTCHA') {
-                return {
-                    success: false,
-                    code: 'NEED_CAPTCHA',
-                    data: error.data.image // 包含验证码图片和相关token信息
-                }
-            }
             console.log(error)
             // 处理其他错误
             return {

@@ -34,7 +34,6 @@ class CloudUtils {
     }
 
     static setProxy() {
-        Cloud189Service.setProxy();
         QuarkService.setProxy();
     }
 
