@@ -359,10 +359,10 @@ class StrmService {
      * 生成 STRM 文件
      * @param {Array} files - 文件列表，每个文件对象需包含 name 属性
      * @param {boolean} overwrite - 是否覆盖已存在的文件
-     * @param {boolean} compare - 是否比较文件名 默认比较
+     * @param {boolean} compare - 是否比较文件名并清理多余STRM，默认不清理以支持增量生成
      * @returns {Promise<Array>} - 返回生成的文件列表
      */
-    async generate(task, files, overwrite = false, compare = true) {
+    async generate(task, files, overwrite = false, compare = false) {
         if (!this.enable){
             logTaskEvent(`STRM生成未启用, 请启用后执行`);
             return;
