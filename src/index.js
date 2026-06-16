@@ -1039,7 +1039,7 @@ AppDataSource.initialize().then(async () => {
                 return res.json({ success: false, error: '请在媒体库映射中至少填写一条规则' });
             }
 
-            const fnv = await Fnv.create({ base_url, username, password, secret_string, api_key });
+            const fnv = await Fnv.create({ base_url, username, password, secret_string, api_key, logger: logTaskEvent });
             if (!fnv.isActive) {
                 return res.json({ success: false, error: '登录失败，请检查用户名、密码、密钥等配置' });
             }

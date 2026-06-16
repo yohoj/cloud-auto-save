@@ -36,6 +36,8 @@ class Fnv {
     this.pluginName = this.constructor.name.toLowerCase();
     this.isActive = false;
     this.token = null;
+    // 日志输出函数，默认 console.log；可注入 logTaskEvent 以输出到任务日志(SSE/日志文件)
+    this.logger = typeof options.logger === "function" ? options.logger : console.log;
 
     for (const [key, value] of Object.entries(Fnv.defaultConfig)) {
       this[key] = Object.prototype.hasOwnProperty.call(options, key)
@@ -61,9 +63,9 @@ class Fnv {
 
     this.isActive = this.token !== null && this.token !== "";
     if (this.isActive) {
-      console.log(`${this.pluginName}: 插件已激活 ✅`);
+      this.logger(`${this.pluginName}: 插件已激活 ✅`);
     } else {
-      console.log(`${this.pluginName}: 插件未激活 ❌`);
+      this.logger(`${this.pluginName}: 插件未激活 ❌`);
     }
 
     return this.isActive;
@@ -77,7 +79,7 @@ class Fnv {
     // 插件运行主入口。
     // 根据任务配置，执行媒体库刷新操作。
     if (!this.isActive) {
-      console.log("飞牛影视: 插件未激活，跳过任务。");
+      this.logger("飞牛影视: 插件未激活，跳过任务。");
       return;
     }
 
@@ -85,13 +87,13 @@ class Fnv {
       task.addition?.[this.pluginName] ?? Fnv.defaultTaskConfig;
 
     if (!taskConfig.auto_refresh) {
-      console.log("飞牛影视: 自动刷新未启用，跳过处理。");
+      this.logger("飞牛影视: 自动刷新未启用，跳过处理。");
       return;
     }
 
     const targetLibraryName = taskConfig.mdb_name;
     if (!targetLibraryName) {
-      console.log("飞牛影视: 未指定媒体库名称，跳过处理。");
+      this.logger("飞牛影视: 未指定媒体库名称，跳过处理。");
       return;
     }
 
@@ -124,7 +126,7 @@ class Fnv {
     );
 
     if (missingKeys.length > 0) {
-      // console.log(`${this.pluginName} 模块缺少必要参数: ${missingKeys.join(", ")}`);
+      // this.logger(`${this.pluginName} 模块缺少必要参数: ${missingKeys.join(", ")}`);
       return false;
     }
 
@@ -148,7 +150,7 @@ class Fnv {
 
       const authx = this._cseSign(normalizedMethod, relUrl, params, data);
       if (!authx) {
-        console.log(`飞牛影视: 为 ${relUrl} 生成签名失败，请求中止。`);
+        this.logger(`飞牛影视: 为 ${relUrl} 生成签名失败，请求中止。`);
         return null;
       }
 
@@ -183,13 +185,13 @@ class Fnv {
         responseData = JSON.parse(response.body);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.log(`飞牛影视: 请求 ${url.toString()} 时出错: ${message}`);
+        this.logger(`飞牛影视: 请求 ${url.toString()} 时出错: ${message}`);
         return null;
       }
 
       const responseCode = responseData.code;
       if (responseCode === undefined || responseCode === null) {
-        console.log("飞牛影视: 响应格式错误，未找到 'code' 字段。");
+        this.logger("飞牛影视: 响应格式错误，未找到 'code' 字段。");
         return null;
       }
 
@@ -198,26 +200,26 @@ class Fnv {
       }
 
       if (responseCode === -2) {
-        console.log(
+        this.logger(
           `飞牛影视: 认证失败 (尝试 ${attempt + 1}/${maxRetries})，尝试重新登录...`,
         );
         if (relUrl === Fnv.API_LOGIN) {
-          console.log("飞牛影视: 登录接口认证失败，请检查用户名和密码。");
+          this.logger("飞牛影视: 登录接口认证失败，请检查用户名和密码。");
           return responseData;
         }
         if (!(await this._login())) {
-          console.log("飞牛影视: 重新登录失败，无法继续请求。");
+          this.logger("飞牛影视: 重新登录失败，无法继续请求。");
           return null;
         }
         continue;
       }
 
       const msg = responseData.msg ?? "未知错误";
-      console.log(`飞牛影视: API调用失败 (${relUrl}): ${msg}`);
+      this.logger(`飞牛影视: API调用失败 (${relUrl}): ${msg}`);
       return responseData;
     }
 
-    console.log(`飞牛影视: 请求 ${relUrl} 在尝试 ${maxRetries} 次后仍然失败。`);
+    this.logger(`飞牛影视: 请求 ${relUrl} 在尝试 ${maxRetries} 次后仍然失败。`);
     return null;
   }
 
@@ -226,39 +228,39 @@ class Fnv {
     const appName = this.app_name || Fnv.defaultConfig.app_name;
     const username = this.username || Fnv.defaultConfig.username;
     const password = this.password || Fnv.defaultConfig.password;
-    console.log("飞牛影视: 正在尝试登录...");
+    this.logger("飞牛影视: 正在尝试登录...");
 
     const payload = { username, password, app_name: appName };
     const responseJson = await this._makeRequest("post", Fnv.API_LOGIN, null, payload);
 
     if (responseJson?.data?.token) {
       this.token = responseJson.data.token;
-      console.log("飞牛影视: 登录成功 ✅");
+      this.logger("飞牛影视: 登录成功 ✅");
       return true;
     }
 
-    console.log("飞牛影视: 登录失败 ❌");
+    this.logger("飞牛影视: 登录失败 ❌");
     return false;
   }
 
   async _getLibraryId(libraryName) {
     // 根据媒体库的名称获取其唯一ID (guid)。
     if (!this.token) {
-      console.log("飞牛影视: 必须先登录才能获取媒体库列表。");
+      this.logger("飞牛影视: 必须先登录才能获取媒体库列表。");
       return null;
     }
 
-    console.log(`飞牛影视: 正在查找媒体库 '${libraryName}'...`);
+    this.logger(`飞牛影视: 正在查找媒体库 '${libraryName}'...`);
     const responseJson = await this._makeRequest("get", Fnv.API_MDB_LIST);
 
     if (responseJson?.data) {
       for (const library of responseJson.data) {
         if (library.name === libraryName) {
-          console.log(`飞牛影视: 找到目标媒体库 ✅，ID: ${library.guid}`);
+          this.logger(`飞牛影视: 找到目标媒体库 ✅，ID: ${library.guid}`);
           return library.guid;
         }
       }
-      console.log(`飞牛影视: 未在媒体库列表中找到名为 '${libraryName}' 的媒体库 ❌`);
+      this.logger(`飞牛影视: 未在媒体库列表中找到名为 '${libraryName}' 的媒体库 ❌`);
     }
 
     return null;
@@ -267,14 +269,14 @@ class Fnv {
   async _refreshLibrary(libraryId, dirList = null) {
     // 根据给定的媒体库ID触发一次媒体库扫描/刷新。
     if (!this.token) {
-      console.log("飞牛影视: 必须先登录才能刷新媒体库。");
+      this.logger("飞牛影视: 必须先登录才能刷新媒体库。");
       return false;
     }
 
     if (dirList && dirList.length > 0) {
-      console.log(`飞牛影视: 正在为媒体库 ${libraryId} 发送部分目录${JSON.stringify(dirList)}刷新指令...`);
+      this.logger(`飞牛影视: 正在为媒体库 ${libraryId} 发送部分目录${JSON.stringify(dirList)}刷新指令...`);
     } else {
-      console.log(`飞牛影视: 正在为媒体库 ${libraryId} 发送刷新指令...`);
+      this.logger(`飞牛影视: 正在为媒体库 ${libraryId} 发送刷新指令...`);
     }
 
     const relUrl = Fnv.API_MDB_SCAN.replace("{}", libraryId);
@@ -287,21 +289,21 @@ class Fnv {
 
     const responseCode = responseJson.code;
     if (responseCode === 0) {
-      console.log("飞牛影视: 发送刷新指令成功 ✅");
+      this.logger("飞牛影视: 发送刷新指令成功 ✅");
       return true;
     }
 
     if (responseCode === -14) {
       if (await this._stopRefreshTask(libraryId)) {
-        console.log("飞牛影视: 发现重复任务，已停止旧任务，重新发送刷新指令...");
+        this.logger("飞牛影视: 发现重复任务，已停止旧任务，重新发送刷新指令...");
         const retryJson = await this._makeRequest("post", relUrl, null, {});
         if (retryJson?.code === 0) {
-          console.log("飞牛影视: 发送刷新指令成功 ✅");
+          this.logger("飞牛影视: 发送刷新指令成功 ✅");
           return true;
         }
-        console.log("飞牛影视: 重新发送刷新指令失败 ❌");
+        this.logger("飞牛影视: 重新发送刷新指令失败 ❌");
       } else {
-        console.log("飞牛影视: 停止旧任务失败，无法继续刷新操作 ❌");
+        this.logger("飞牛影视: 停止旧任务失败，无法继续刷新操作 ❌");
       }
     }
 
@@ -311,20 +313,20 @@ class Fnv {
   async _stopRefreshTask(libraryId) {
     // 停止指定的媒体库刷新任务。
     if (!this.token) {
-      console.log("飞牛影视: 必须先登录才能停止刷新任务。");
+      this.logger("飞牛影视: 必须先登录才能停止刷新任务。");
       return false;
     }
 
-    console.log(`飞牛影视: 正在停止媒体库刷新任务 ${libraryId}...`);
+    this.logger(`飞牛影视: 正在停止媒体库刷新任务 ${libraryId}...`);
     const payload = { guid: libraryId, type: "TaskItemScrap" };
     const responseJson = await this._makeRequest("post", Fnv.API_TASK_STOP, null, payload);
 
     if (responseJson?.code === 0) {
-      console.log("飞牛影视: 停止刷新任务成功 ✅");
+      this.logger("飞牛影视: 停止刷新任务成功 ✅");
       return true;
     }
 
-    console.log("飞牛影视: 停止刷新任务失败 ❌");
+    this.logger("飞牛影视: 停止刷新任务失败 ❌");
     return false;
   }
 

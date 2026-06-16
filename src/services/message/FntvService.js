@@ -55,6 +55,7 @@ class FntvService extends MessageService {
                 secret_string: this.config.secret_string,
                 api_key: this.config.api_key,
                 token: this.config.token || null,
+                logger: logTaskEvent,
             };
 
             const fnv = await Fnv.create(fnvOptions);
