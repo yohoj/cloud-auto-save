@@ -499,18 +499,34 @@ class Cloud189Service {
         return captchaId;
     }
 
-    _captchaResult(session, message) {
+    async _captchaResult(session, message) {
         const captchaId = this._saveCaptchaSession({
             ...session,
             expiresAt: Date.now() + Cloud189Service.captchaSessionTtlMs
         });
+        let captchaUrl = this._getCaptchaUrl(session.appConf);
+        try {
+            const imgRes = await got(captchaUrl, {
+                headers: {
+                    Referer: AUTH_URL,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36'
+                },
+                responseType: 'buffer',
+                dnsLookupIpVersion: 'ipv4',
+                timeout: { request: 10000 }
+            });
+            const mimeType = imgRes.headers['content-type'] || 'image/png';
+            captchaUrl = `data:${mimeType};base64,${imgRes.rawBody.toString('base64')}`;
+        } catch (e) {
+            // 下载失败则降级使用原始 URL
+        }
         return {
             success: false,
             code: 'NEED_CAPTCHA',
             message: message || '请输入验证码',
             data: {
                 captchaId,
-                captchaUrl: this._getCaptchaUrl(session.appConf)
+                captchaUrl
             }
         };
     }
@@ -520,7 +536,7 @@ class Cloud189Service {
             Cloud189Service.cleanupCaptchaSessions();
             let loginSession = captchaId ? Cloud189Service.captchaSessions.get(captchaId) : null;
             if (captchaId && !loginSession) {
-                return this._captchaResult(await this._createPasswordLoginSession(), '验证码已过期，请重新输入');
+                return await this._captchaResult(await this._createPasswordLoginSession(), '验证码已过期，请重新输入');
             }
             if (!loginSession) {
                 loginSession = await this._createPasswordLoginSession();
@@ -548,7 +564,7 @@ class Cloud189Service {
                 const message = loginRes.msg || loginRes.message || '登录失败';
                 const resultCode = Number(loginRes.result);
                 if (/验证码|captcha/i.test(message) || resultCode === -8 || resultCode === -13) {
-                    return this._captchaResult(await this._createPasswordLoginSession(), message);
+                    return await this._captchaResult(await this._createPasswordLoginSession(), message);
                 }
                 return {
                     success: false,
