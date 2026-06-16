@@ -121,6 +121,13 @@ class Cloud189Service {
         client.request = client.request.extend({
             dnsLookupIpVersion: 'ipv4'
         });
+        // 同时强制 authClient(创建 sessionKey 的实例)走 IPv4，避免 session 与数据请求落在不同 IP 家族，
+        // 触发天翼云盘 InvalidSessionKey(check ip error - cookiesIp / curIp 不一致)
+        if (client.authClient?.authRequest) {
+            client.authClient.authRequest = client.authClient.authRequest.extend({
+                dnsLookupIpVersion: 'ipv4'
+            });
+        }
         this._installTvSessionFallback(client, tokenStore, account);
         return client;
     }
@@ -412,7 +419,9 @@ class Cloud189Service {
             followRedirect: false,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0'
-            }
+            },
+            dnsLookupIpVersion: 'ipv4',
+            timeout: { request: 30000 }
         })
         return res.headers.location
     }
