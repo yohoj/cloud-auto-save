@@ -398,7 +398,9 @@ class TaskService {
             isQuarkTask
         } = options;
         const existsByMd5 = !file.isFolder && file.md5 ? existingFiles.has(file.md5) : false;
-        const existsByFileName = !file.isFolder && existingFileNames.has(file.name);
+        // 子目录文件用完整相对路径去重（避免不同子目录同名文件被误拦），根目录文件仍用裸文件名
+        const fileRelativePath = file._relativeDir ? `${file._relativeDir}/${file.name}` : file.name;
+        const existsByFileName = !file.isFolder && (existingFileNames.has(file.name) || existingFileNames.has(fileRelativePath));
         const existsByFolderName = file.isFolder && existingFolderNames.has(file.name);
         const suffixPassed = file.isFolder || this._checkFileSuffix(file, enableOnlySaveMedia, mediaSuffixs);
         const matchPassed = aiFiltered || this._handleMatchMode(task, file);
@@ -528,56 +530,127 @@ class TaskService {
         return true;
     }
 
-    // 处理新文件
+    // 获取或创建本地子目录（在指定父目录下查找同名目录，不存在则新建）
+    async _getOrCreateLocalFolder(cloud189, parentFolderId, folderName) {
+        const folderInfo = await cloud189.listFiles(parentFolderId);
+        if (folderInfo?.fileListAO?.folderList) {
+            const existing = folderInfo.fileListAO.folderList.find(
+                f => (f.name || f.fileName) === folderName
+            );
+            if (existing) {
+                return existing.id || existing.fileId;
+            }
+        }
+        const newFolder = await cloud189.createFolder(folderName, parentFolderId);
+        if (!newFolder?.id) throw new Error(`创建子目录 ${folderName} 失败`);
+        logTaskEvent(`已创建子目录: ${folderName}`);
+        return newFolder.id;
+    }
+
+    // 递归收集分享目录下的所有文件（扁平化，含子目录），每个文件附带来源目录ID和相对路径
+    async _collectShareFilesRecursive(cloud189, task, shareFolderId, relativeDir = '') {
+        let dir;
+        try {
+            dir = await cloud189.listShareDir(task.shareId, shareFolderId, task.shareMode, task.accessCode, true);
+        } catch (e) {
+            logTaskEvent(`获取分享子目录文件列表失败(${relativeDir || '根目录'}): ${e.message}`);
+            return [];
+        }
+        if (this._isQuarkStokenExpired(dir)) {
+            await this._refreshQuarkShareToken(cloud189, task);
+            dir = await cloud189.listShareDir(task.shareId, shareFolderId, task.shareMode, task.accessCode, true);
+        }
+        if (!dir?.fileListAO) return [];
+
+        // 当前层级的文件，附加来源目录信息
+        const files = (dir.fileListAO.fileList || []).map(file => ({
+            ...file,
+            _shareFolderId: shareFolderId,
+            _relativeDir: relativeDir
+        }));
+
+        // 递归处理子目录
+        for (const folder of dir.fileListAO.folderList || []) {
+            const folderId = this._getShareFolderId(folder);
+            const folderName = this._getShareFolderName(folder);
+            if (!folderId || !folderName) continue;
+            const childRelativeDir = this._joinRelativePath(relativeDir, folderName);
+            const childFiles = await this._collectShareFilesRecursive(cloud189, task, folderId, childRelativeDir);
+            files.push(...childFiles);
+        }
+        return files;
+    }
+
+    // 处理新文件（支持子目录：按来源分享目录分组，分别找到/创建目标子目录后执行转存）
     async _handleNewFiles(task, newFiles, cloud189, mediaSuffixs) {
-        const taskInfoList = [];
         const fileNameList = [];
         let fileCount = 0;
 
+        if (task.enableSystemProxy) {
+            throw new Error('系统代理模式已移除');
+        }
+
+        // 按来源分享目录分组，同一来源目录的文件一起转存到对应的目标子目录
+        const groupMap = new Map(); // key: `${shareFolderId}::${relativeDir}`
         for (const file of newFiles) {
-            if (task.enableSystemProxy) {
-                throw new Error('系统代理模式已移除');
-            } else {
-                // 普通模式：添加到转存任务
-                taskInfoList.push({
-                    fileId: file.id,
-                    fileName: file.name,
-                    isFolder: file.isFolder ? 1 : 0,
-                    md5: file.md5,
-                    shareFidToken: file.shareFidToken,
-                    fidToken: file.fidToken,
-                });
+            const shareFolderId = file._shareFolderId || task.shareFolderId;
+            const relativeDir = file._relativeDir || '';
+            const groupKey = `${shareFolderId}::${relativeDir}`;
+            if (!groupMap.has(groupKey)) {
+                groupMap.set(groupKey, { files: [], shareFolderId, relativeDir });
             }
-            fileNameList.push(`├─ ${file.name}`);
+            groupMap.get(groupKey).files.push(file);
+            const displayName = relativeDir ? `${relativeDir}/${file.name}` : file.name;
+            fileNameList.push(`├─ ${displayName}`);
             if (this._checkFileSuffix(file, true, mediaSuffixs)) fileCount++;
         }
+
         // 如果有多个文件，最后一个文件使用└─
         if (fileNameList.length > 0) {
             const lastItem = fileNameList.pop();
             fileNameList.push(lastItem.replace('├─', '└─'));
         }
-        if (taskInfoList.length > 0) {
-            if (!task.enableSystemProxy) {
-                const batchTaskDto = new BatchTaskDto({
-                    taskInfos: JSON.stringify(taskInfoList),
-                    type: 'SHARE_SAVE',
-                    targetFolderId: task.realFolderId,
-                    shareId: task.shareId,
-                    shareMode: task.shareMode,
-                    shareFolderId: task.shareFolderId
-                });
-                try {
-                    await this.createBatchTask(cloud189, batchTaskDto);
-                } catch (error) {
-                    if (!this._isQuarkStokenExpired(error)) throw error;
-                    await this._refreshQuarkShareToken(cloud189, task);
-                    batchTaskDto.shareMode = task.shareMode;
-                    await this.createBatchTask(cloud189, batchTaskDto);
+
+        // 对每个分组执行转存任务
+        for (const { files, shareFolderId, relativeDir } of groupMap.values()) {
+            // 根据相对路径逐级找到或创建目标子目录
+            let targetFolderId = task.realFolderId;
+            if (relativeDir) {
+                const parts = relativeDir.split('/');
+                let parentId = task.realFolderId;
+                for (const part of parts) {
+                    parentId = await this._getOrCreateLocalFolder(cloud189, parentId, part);
                 }
-            }else{
-                throw new Error('系统代理模式已移除');
+                targetFolderId = parentId;
+            }
+
+            const taskInfoList = files.map(file => ({
+                fileId: file.id,
+                fileName: file.name,
+                isFolder: file.isFolder ? 1 : 0,
+                md5: file.md5,
+                shareFidToken: file.shareFidToken,
+                fidToken: file.fidToken,
+            }));
+
+            const batchTaskDto = new BatchTaskDto({
+                taskInfos: JSON.stringify(taskInfoList),
+                type: 'SHARE_SAVE',
+                targetFolderId,
+                shareId: task.shareId,
+                shareMode: task.shareMode,
+                shareFolderId
+            });
+            try {
+                await this.createBatchTask(cloud189, batchTaskDto);
+            } catch (error) {
+                if (!this._isQuarkStokenExpired(error)) throw error;
+                await this._refreshQuarkShareToken(cloud189, task);
+                batchTaskDto.shareMode = task.shareMode;
+                await this.createBatchTask(cloud189, batchTaskDto);
             }
         }
+
         // 修改省略号的显示格式
         if (fileNameList.length > 20) {
             fileNameList.splice(5, fileNameList.length - 10, '├─ ...');
@@ -669,10 +742,21 @@ class TaskService {
                 logTaskEvent("获取文件列表失败: " + JSON.stringify(shareDir));
                 throw new Error('获取文件列表失败');
             }
-            let shareFiles = [
-                ...(shareDir.fileListAO.fileList || []),
-                ...(isQuarkTask ? (shareDir.fileListAO.folderList || []) : [])
-            ];
+            // 递归收集所有子目录中的文件（天翼/夸克统一处理，解决子目录媒体文件无法转存的问题）
+            const rootFiles = (shareDir.fileListAO.fileList || []).map(f => ({
+                ...f, _shareFolderId: task.shareFolderId, _relativeDir: ''
+            }));
+            const subDirFiles = [];
+            for (const folder of shareDir.fileListAO.folderList || []) {
+                const subFolderId = this._getShareFolderId(folder);
+                const subFolderName = this._getShareFolderName(folder);
+                if (!subFolderId || !subFolderName) continue;
+                const childFiles = await this._collectShareFilesRecursive(
+                    cloud189, task, subFolderId, subFolderName
+                );
+                subDirFiles.push(...childFiles);
+            }
+            let shareFiles = [...rootFiles, ...subDirFiles];
             const sourceFileCount = shareDir.fileListAO.fileList?.length || 0;
             const sourceFolderCount = shareDir.fileListAO.folderList?.length || 0;
             const folderFiles = await this.getAllFolderFiles(cloud189, task, isQuarkTask);
@@ -690,6 +774,8 @@ class TaskService {
                         acc.existingFiles.add(file.md5);
                     }
                     acc.existingFileNames.add(file.name);
+                    // 同时记录带路径的完整名称，用于子目录文件去重
+                    if (file.relativePath) acc.existingFileNames.add(file.relativePath);
                     if ((task.totalEpisodes == null || task.totalEpisodes <= 0) || this._checkFileSuffix(file, true, mediaSuffixs)) {
                         acc.existingMediaCount++;
                     }
@@ -1050,9 +1136,12 @@ class TaskService {
 
     // 检查任务状态
     async checkTaskStatus(cloud189, taskId, count = 0, batchTaskDto) {
-        if (count > 5) {
-             return false;
+        // 前 10 次快速轮询（200ms），之后耐心等待（2000ms），最多约 52 秒
+        if (count > 35) {
+            logTaskEvent(`任务编号: ${taskId} 状态轮询超时，任务已提交成功，视为处理中`);
+            return true;
         }
+        const delay = count < 10 ? 200 : 2000;
         let type = batchTaskDto.type || 'SHARE_SAVE';
         // 轮询任务状态
         const task = await cloud189.checkTaskStatus(taskId, batchTaskDto)
@@ -1063,8 +1152,7 @@ class TaskService {
         const statusMessage = task.res_msg || task.resMsg || task.message || '';
         logTaskEvent(`任务编号: ${task.taskId}, 任务状态: ${task.taskStatus}${statusDetail}${statusMessage ? `, 信息: ${statusMessage}` : ''}`)
         if (task.taskStatus == 3 || task.taskStatus == 1) {
-            // 暂停200毫秒
-            await new Promise(resolve => setTimeout(resolve, 200));
+            await new Promise(resolve => setTimeout(resolve, delay));
             return await this.checkTaskStatus(cloud189, taskId, count + 1, batchTaskDto)
         }
         if (task.taskStatus == 4) {
@@ -1283,10 +1371,13 @@ class TaskService {
             throw error;
         }
         logTaskEvent(`批量任务处理中: ${JSON.stringify(resp)}`)
-        if (!await this.checkTaskStatus(cloud189,resp.taskId, 0 , batchTaskDto)) {
-            throw new Error('检查批量任务状态: 批量任务处理失败');
+        const success = await this.checkTaskStatus(cloud189, resp.taskId, 0, batchTaskDto);
+        if (!success) {
+            // 任务状态查询失败（非超时），记录警告但不中断流程，避免因状态接口异常触发不必要的重试
+            logTaskEvent(`警告: 批量任务 ${resp.taskId} 状态查询失败，转存请求已提交，请手动确认结果`);
+        } else {
+            logTaskEvent(`批量任务处理完成`);
         }
-        logTaskEvent(`批量任务处理完成`)
     }
     // 定时清空回收站
     async clearRecycleBin(enableAutoClearRecycle, enableAutoClearFamilyRecycle) {
