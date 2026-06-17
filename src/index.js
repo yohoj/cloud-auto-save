@@ -857,38 +857,68 @@ AppDataSource.initialize().then(async () => {
         try {
             const taskId = parseInt(req.query.taskId);
             const folderId = req.query.folderId;
+            const overrideShareLink = req.query.shareLink;
+            const overrideAccessCode = req.query.accessCode || '';
             const forceRefresh = req.query.refresh === 'true';
-            const cacheKey = `share_folders_${taskId}_${folderId}`;
+            const cacheKey = `share_folders_${taskId}_${overrideShareLink || ''}_${folderId}`;
             if (forceRefresh) {
                 folderCache.clearPrefix("share_folders_");
             }
             if (folderCache.has(cacheKey)) {
                 return res.json({ success: true, data: folderCache.get(cacheKey) });
             }
-            const task = await taskRepo.findOneBy({ id: parseInt(taskId) });
-            if (!task) {
-                throw new Error('任务不存在');
-            }
-            if (folderId == -11) {
-                // 返回顶级目录
-                res.json({success: true, data: [{id: task.shareFileId, name: task.resourceName}]});
-                return 
-            }
             const account = await accountRepo.findOneBy({ id: req.params.accountId });
             if (!account) {
                 throw new Error('账号不存在');
             }
             const cloud189 = CloudUtils.getService(account);
+
+            // 解析分享信息: 传入了 shareLink(编辑时改了链接)则用新链接实时解析, 否则读取任务存储值
+            let shareContext;
+            let topFolderName;
+            if (overrideShareLink) {
+                const { url: parsedShareLink, accessCode: parsedAccessCode } = CloudUtils.parseCloudShare(overrideShareLink);
+                const accessCode = parsedAccessCode || overrideAccessCode;
+                taskService._validateAccountMatchesShareLink(account, parsedShareLink);
+                const shareCode = CloudUtils.parseShareCode(parsedShareLink, account);
+                const shareInfo = await taskService.getShareInfo(cloud189, shareCode, accessCode);
+                if (shareInfo.shareMode == 1 && accessCode) {
+                    const accessCodeResponse = await cloud189.checkAccessCode(shareCode, accessCode);
+                    if (accessCodeResponse?.shareId) {
+                        shareInfo.shareId = accessCodeResponse.shareId;
+                    }
+                }
+                if (!shareInfo.shareId) {
+                    throw new Error('获取分享信息失败, 请检查链接或访问码');
+                }
+                shareContext = { shareId: shareInfo.shareId, fileId: shareInfo.fileId, shareMode: shareInfo.shareMode, accessCode };
+                topFolderName = shareInfo.fileName;
+            } else {
+                const task = await taskRepo.findOneBy({ id: parseInt(taskId) });
+                if (!task) {
+                    throw new Error('任务不存在');
+                }
+                shareContext = { shareId: task.shareId, fileId: task.shareFileId, shareMode: task.shareMode, accessCode: task.accessCode || '' };
+                topFolderName = task.resourceName;
+            }
+
+            if (folderId == -11) {
+                // 返回顶级目录
+                const data = [{ id: shareContext.fileId, name: topFolderName }];
+                folderCache.set(cacheKey, data);
+                res.json({ success: true, data });
+                return
+            }
             // 查询分享目录
             const folders = await taskService.listShareFolders(
                 cloud189,
                 {
-                    shareId: task.shareId,
-                    fileId: task.shareFileId,
-                    shareMode: task.shareMode
+                    shareId: shareContext.shareId,
+                    fileId: shareContext.fileId,
+                    shareMode: shareContext.shareMode
                 },
                 folderId,
-                task.accessCode || ''
+                shareContext.accessCode
             );
             folders.forEach(folder => {
                 folder.disableExpand = true;

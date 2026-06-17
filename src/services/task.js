@@ -934,6 +934,10 @@ class TaskService {
             const strmService = new StrmService();
             strmService.deleteDir(strmService.getTaskLocalRelativePath(task))
         }
+        // 处理分享链接/账号变更(仅当真正发生变化时才重新解析)
+        if (updates.shareLink !== undefined) {
+            await this._applyShareLinkUpdate(task, updates);
+        }
         // 只允许更新特定字段
         const allowedFields = ['resourceName', 'realFolderId', 'currentEpisodes', 'totalEpisodes', 'status','realFolderName', 'shareFolderName', 'shareFolderId', 'matchPattern','matchOperator','matchValue','remark', 'enableCron', 'cronExpression', 'enableTaskScraper'];
         for (const field of allowedFields) {
@@ -971,6 +975,74 @@ class TaskService {
             SchedulerService.saveTaskJob(newTask, this)
         }
         return newTask;
+    }
+
+    // 处理更新任务时的分享链接/账号变更: 重新解析分享、校验网盘类型与保存目录
+    async _applyShareLinkUpdate(task, updates) {
+        // 解析url及内嵌访问码
+        const { url: parsedShareLink, accessCode: parsedAccessCode } = CloudUtils.parseCloudShare(updates.shareLink);
+        const accessCode = parsedAccessCode || updates.accessCode || '';
+        const targetAccountId = updates.accountId !== undefined ? Number(updates.accountId) : task.accountId;
+
+        // 变更判定: 链接/访问码/账号均未变化则无需重新解析
+        const linkUnchanged = parsedShareLink === task.shareLink;
+        const accessCodeUnchanged = accessCode === (task.accessCode || '');
+        const accountUnchanged = targetAccountId === task.accountId;
+        if (linkUnchanged && accessCodeUnchanged && accountUnchanged) {
+            return;
+        }
+
+        const account = await this.accountRepo.findOneBy({ id: targetAccountId });
+        if (!account) throw new Error('账号不存在');
+
+        // 校验账号与分享链接网盘类型一致
+        this._validateAccountMatchesShareLink(account, parsedShareLink);
+
+        const cloud189 = CloudUtils.getService(account);
+        const shareCode = CloudUtils.parseShareCode(parsedShareLink, account);
+        const shareInfo = await this.getShareInfo(cloud189, shareCode, accessCode);
+        // 如果分享链接是加密链接, 校验访问码
+        if (shareInfo.shareMode == 1) {
+            if (!accessCode) {
+                throw new Error('分享链接为加密链接, 请提供访问码');
+            }
+            const accessCodeResponse = await cloud189.checkAccessCode(shareCode, accessCode);
+            if (!accessCodeResponse) {
+                throw new Error('校验访问码失败');
+            }
+            if (!accessCodeResponse.shareId) {
+                throw new Error('访问码无效');
+            }
+            shareInfo.shareId = accessCodeResponse.shareId;
+        }
+        if (!shareInfo.shareId) {
+            throw new Error('获取分享信息失败');
+        }
+
+        // 校验保存目录属于目标账号(账号/网盘变化时旧目录会失效)
+        const newRealFolderId = updates.realFolderId !== undefined ? updates.realFolderId : task.realFolderId;
+        if (!newRealFolderId) {
+            throw new Error('请选择保存目录');
+        }
+        const folderInfo = await cloud189.listFiles(newRealFolderId);
+        if (!folderInfo || folderInfo.res_code === 'FileNotFound') {
+            throw new Error('保存目录不存在或不属于该账号, 请重新选择');
+        }
+
+        // 应用变更
+        task.accountId = account.id;
+        task.account = account;
+        task.shareLink = parsedShareLink;
+        task.accessCode = accessCode;
+        task.shareId = shareInfo.shareId;
+        task.shareFileId = shareInfo.fileId;
+        task.shareMode = shareInfo.shareMode;
+        task.targetFolderId = newRealFolderId;
+        // 若前端未重选源目录, 默认使用分享根目录
+        if (updates.shareFolderId === undefined) {
+            task.shareFolderId = shareInfo.fileId;
+            task.shareFolderName = '';
+        }
     }
 
     // 自动重命名

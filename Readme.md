@@ -67,7 +67,7 @@
 docker run -d \
   --name cloud-auto-save \
   --restart unless-stopped \
-  -p 6001:3000 \
+  -p 3000:3000 \
   -v /vol2/1000/docker/cloud-auto-save:/home/data \
   -v /vol1/1000/link/cloud:/home/strm \
   -e PUID=0 \
@@ -78,7 +78,7 @@ docker run -d \
 访问：
 
 ```text
-http://服务器IP:6001
+http://服务器IP:3000
 ```
 
 默认登录账号：
@@ -99,7 +99,7 @@ services:
     container_name: cloud-auto-save
     restart: unless-stopped
     ports:
-      - "6001:3000"
+      - "3000:3000"
     environment:
       TZ: Asia/Shanghai
       PUID: 0

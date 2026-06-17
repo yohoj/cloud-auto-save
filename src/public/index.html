@@ -805,6 +805,20 @@
             <div class="form-body">
                 <input type="hidden" id="editTaskId">
                 <div class="form-group">
+                    <label for="editAccountId">选择账号</label>
+                    <select id="editAccountId" required></select>
+                </div>
+                <div class="form-group">
+                    <label for="editShareLink">分享链接</label>
+                    <div class="share-input-group" style="display: flex; gap: 10px;">
+                        <input type="text" id="editShareLink" required style="flex: 2;"
+                            placeholder="可自动解析带访问码的链接">
+                        <input type="text" id="editAccessCode" placeholder="访问码（可选）" style="flex: 1;">
+                    </div>
+                    <div id="editShareParseError"
+                        style="color: #ff4d4f; font-size: 10px; margin-top: 2px; min-height: 12px;"></div>
+                </div>
+                <div class="form-group">
                     <label for="editResourceName">资源名</label>
                     <div class="tree-select">
                         <input type="text" id="editResourceName" required>
@@ -813,8 +827,8 @@
                 <div class="form-group">
                     <label for="shareFolderId">源目录(分享链接中的目录)</label>
                     <div class="tree-select">
-                        <input type="text" id="shareFolder" readonly required>
-                        <input type="hidden" id="shareFolderId" required>
+                        <input type="text" id="shareFolder" readonly placeholder="留空则使用分享根目录">
+                        <input type="hidden" id="shareFolderId">
                         <div class="tree-select-dropdown"></div>
                     </div>
                 </div>
@@ -881,7 +895,6 @@
             </div>
             <div class="form-actions">
                 <button type="submit">保存</button>
-                <input type="hidden" id="editAccountId">
                 <button type="button" class="btn-default" onclick="closeEditTaskModal()">取消</button>
             </div>
         </form>
