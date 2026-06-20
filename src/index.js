@@ -907,7 +907,12 @@ AppDataSource.initialize().then(async () => {
                     throw new Error('任务不存在');
                 }
                 shareContext = { shareId: task.shareId, fileId: task.shareFileId, shareMode: task.shareMode, accessCode: task.accessCode || '' };
-                topFolderName = task.resourceName;
+                const shareInfo = await taskService.getShareInfo(
+                    cloud189,
+                    CloudUtils.parseShareCode(task.shareLink, account),
+                    task.accessCode || ''
+                );
+                topFolderName = shareInfo.fileName;
             }
 
             if (folderId == -11) {

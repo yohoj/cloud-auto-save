@@ -1,26 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch, markRaw } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import {
-  Moon,
-  Sunny,
-  Document,
-  SwitchButton,
-  Search,
-  ChatDotRound,
-  Film,
-  Tickets,
-  User,
-  Setting,
-  Plus
-} from '@element-plus/icons-vue'
+import { Moon, Sunny, Document, SwitchButton, Film, Tickets, User, Setting } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/composables/useTheme'
 import { useBreakpoints } from '@/composables/useBreakpoints'
 import LogViewer from './LogViewer.vue'
-import CloudSaverPanel from './CloudSaverPanel.vue'
-import ChatPanel from './ChatPanel.vue'
-import StrmGeneratorPanel from './StrmGeneratorPanel.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -29,16 +14,6 @@ const { theme, toggle } = useTheme()
 const { isMobile } = useBreakpoints()
 
 const showLogs = ref(false)
-const fabOpen = ref(false)
-const cloudSaverRef = ref<InstanceType<typeof CloudSaverPanel>>()
-const chatRef = ref<InstanceType<typeof ChatPanel>>()
-const strmRef = ref<InstanceType<typeof StrmGeneratorPanel>>()
-
-// 收起速拨菜单后再执行对应动作
-function runFab(fn: () => void) {
-  fabOpen.value = false
-  fn()
-}
 
 const tabs = [
   { name: 'tasks', label: '任务', icon: markRaw(Tickets) },
@@ -91,7 +66,6 @@ watch(
   () => route.name,
   () => {
     tabbarHidden.value = false
-    fabOpen.value = false
     lastY = scroller?.scrollTop ?? 0
   }
 )
@@ -159,37 +133,5 @@ async function onLogout() {
     <el-drawer v-model="showLogs" title="系统日志" :size="isMobile ? '86%' : '55%'" direction="rtl">
       <LogViewer />
     </el-drawer>
-
-    <!-- 浮动工具（点主按钮展开/收起，减少遮挡） -->
-    <div v-if="fabOpen" class="fab-scrim" @click="fabOpen = false" />
-    <div class="fab-group" :class="{ open: fabOpen }">
-      <div class="fab-actions">
-        <button class="fab-action" @click="runFab(() => cloudSaverRef?.open())">
-          <span class="fab-action__label">搜索资源</span>
-          <span class="fab-action__btn"><el-icon><Search /></el-icon></span>
-        </button>
-        <button class="fab-action" @click="runFab(() => chatRef?.open())">
-          <span class="fab-action__label">AI 助手</span>
-          <span class="fab-action__btn"><el-icon><ChatDotRound /></el-icon></span>
-        </button>
-        <button class="fab-action" @click="runFab(() => strmRef?.open())">
-          <span class="fab-action__label">STRM 生成器</span>
-          <span class="fab-action__btn"><el-icon><Film /></el-icon></span>
-        </button>
-      </div>
-      <button
-        class="fab-main"
-        :class="{ open: fabOpen }"
-        :aria-expanded="fabOpen"
-        aria-label="工具"
-        @click="fabOpen = !fabOpen"
-      >
-        <el-icon><Plus /></el-icon>
-      </button>
-    </div>
-
-    <CloudSaverPanel ref="cloudSaverRef" />
-    <ChatPanel ref="chatRef" />
-    <StrmGeneratorPanel ref="strmRef" />
   </el-container>
 </template>

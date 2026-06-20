@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Delete, Edit, Star, StarFilled, Refresh } from '@element-plus/icons-vue'
+import { Plus, Delete, Edit, Star, StarFilled, Refresh, Film } from '@element-plus/icons-vue'
 import { useAccountsStore } from '@/stores/accounts'
 import {
   deleteAccount,
@@ -15,6 +15,7 @@ import {
 import { formatCapacity } from '@/utils/format'
 import { useBreakpoints } from '@/composables/useBreakpoints'
 import AccountDialog from '@/components/AccountDialog.vue'
+import { generateAllStrm } from '@/api/misc'
 
 const store = useAccountsStore()
 const { isMobile } = useBreakpoints()
@@ -70,6 +71,24 @@ async function onClearRecycle() {
   const res = await clearRecycle()
   if (res.success) ElMessage.success('后台任务执行中，请稍后查看结果')
   else ElMessage.error('清空失败：' + (res.error || ''))
+}
+
+async function onGenerateStrm(row: Account) {
+  try {
+    await ElMessageBox.confirm(`确定要生成账号【${row.alias || row.username}】的 STRM 吗？`, '生成 STRM', {
+      type: 'info',
+      confirmButtonText: '生成',
+      cancelButtonText: '取消'
+    })
+  } catch {
+    return
+  }
+  const res = await generateAllStrm([row.id], false)
+  if (res.success) {
+    ElMessage.success(res.data || '执行中，请稍后查看结果')
+  } else {
+    ElMessage.error('生成失败：' + (res.error || ''))
+  }
 }
 
 // 通用的「点选编辑」：弹出 prompt，提交后刷新（对应旧版 prompt() 交互）
@@ -174,8 +193,9 @@ const editEmbyReplace = (row: Account) =>
         </template>
       </el-table-column>
 
-      <el-table-column label="操作" width="150" fixed="right" align="center">
+      <el-table-column label="操作" width="240" fixed="right" align="center">
         <template #default="{ row }">
+          <el-button size="small" :icon="Film" @click="onGenerateStrm(row)">STRM</el-button>
           <el-button size="small" :icon="Edit" @click="onEdit(row)">修改</el-button>
           <el-button size="small" type="danger" :icon="Delete" @click="onDelete(row)" />
         </template>
@@ -223,6 +243,7 @@ const editEmbyReplace = (row: Account) =>
         </div>
 
         <div class="data-card__actions">
+          <el-button size="small" :icon="Film" @click="onGenerateStrm(row)">STRM</el-button>
           <el-button size="small" :icon="Edit" @click="onEdit(row)">修改</el-button>
           <el-button size="small" type="danger" :icon="Delete" @click="onDelete(row)">删除</el-button>
         </div>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Delete, VideoPlay, Edit, Film } from '@element-plus/icons-vue'
+import { Plus, Refresh, Delete, VideoPlay, Edit, Film, Search } from '@element-plus/icons-vue'
 import { useTasksStore } from '@/stores/tasks'
 import {
   executeTask,
@@ -16,12 +16,14 @@ import { useBreakpoints } from '@/composables/useBreakpoints'
 import CreateTaskDialog from '@/components/CreateTaskDialog.vue'
 import EditTaskDialog from '@/components/EditTaskDialog.vue'
 import FileListDialog from '@/components/FileListDialog.vue'
+import CloudSaverPanel from '@/components/CloudSaverPanel.vue'
 
 const store = useTasksStore()
 const { isMobile } = useBreakpoints()
 const createDialogRef = ref<InstanceType<typeof CreateTaskDialog>>()
 const editDialogRef = ref<InstanceType<typeof EditTaskDialog>>()
 const fileListRef = ref<InstanceType<typeof FileListDialog>>()
+const cloudSaverRef = ref<InstanceType<typeof CloudSaverPanel>>()
 
 const STATUS: Record<string, { label: string; type: 'info' | 'warning' | 'success' | 'danger' }> = {
   pending: { label: '等待中', type: 'info' },
@@ -70,7 +72,7 @@ watch(
 )
 
 function taskName(t: Task) {
-  return t.shareFolderName ? `${t.resourceName || ''}/${t.shareFolderName}` : t.resourceName || '未知'
+  return t.resourceName || '未知'
 }
 function progress(t: Task) {
   if (!t.totalEpisodes) return 0
@@ -182,6 +184,9 @@ async function onGenerateStrm() {
 function onCreate() {
   createDialogRef.value?.open()
 }
+function onSearchResources() {
+  cloudSaverRef.value?.open()
+}
 function onEdit(row: Task) {
   editDialogRef.value?.open(row)
 }
@@ -194,6 +199,7 @@ function onShowFiles(row: Task) {
   <div class="tasks-view">
     <div class="toolbar">
       <el-button type="primary" :icon="Plus" @click="onCreate">新建任务</el-button>
+      <el-button :icon="Search" @click="onSearchResources">搜索资源</el-button>
       <el-button :icon="VideoPlay" @click="onExecuteAll">执行全部</el-button>
       <el-button :icon="Film" :disabled="!selectedCount" @click="onGenerateStrm">生成 STRM</el-button>
       <el-button type="danger" :icon="Delete" :disabled="!selectedCount" @click="onBatchDelete">
@@ -375,6 +381,7 @@ function onShowFiles(row: Task) {
     <CreateTaskDialog ref="createDialogRef" @saved="store.fetch()" />
     <EditTaskDialog ref="editDialogRef" @saved="store.fetch()" />
     <FileListDialog ref="fileListRef" @changed="store.fetch()" />
+    <CloudSaverPanel ref="cloudSaverRef" />
   </div>
 </template>
 

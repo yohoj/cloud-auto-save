@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { FolderOpened } from '@element-plus/icons-vue'
+import { ArrowDown, FolderOpened } from '@element-plus/icons-vue'
 import { useAccountsStore } from '@/stores/accounts'
 import { createTask, parseShare, executeTask, type ShareFolder } from '@/api/tasks'
 import { parseCloudShare, getShareCloudType } from '@/utils/share'
@@ -270,28 +270,54 @@ async function submit() {
         <el-input v-model="form.remark" placeholder="选填" />
       </el-form-item>
 
-      <el-collapse v-model="showAdvanced" class="advanced">
-        <el-collapse-item title="高级选项（匹配规则 / 重命名 / 刮削）" name="adv">
-          <el-form-item label="匹配模式">
+      <section class="advanced">
+        <button
+          type="button"
+          class="advanced__toggle"
+          :class="{ 'is-open': showAdvanced }"
+          @click="showAdvanced = !showAdvanced"
+        >
+          <div class="advanced__copy">
+            <span class="advanced__title">高级选项</span>
+            <span class="advanced__summary">匹配规则 / 重命名 / 刮削</span>
+          </div>
+          <el-icon class="advanced__arrow"><ArrowDown /></el-icon>
+        </button>
+
+        <div v-show="showAdvanced" class="advanced__body">
+          <div class="advanced__hint">
+            只在需要过滤集数、批量重命名或自动刮削时填写，留空会按默认流程创建任务。
+          </div>
+
+          <el-form-item label="匹配模式" class="advanced__item">
             <el-input v-model="form.matchPattern" placeholder="正则，从文件名提取用于比较的值" />
           </el-form-item>
-          <el-form-item label="匹配规则">
-            <el-select v-model="form.matchOperator" style="width: 120px">
-              <el-option v-for="o in matchOperators" :key="o.value" :label="o.label" :value="o.value" />
-            </el-select>
-            <el-input v-model="form.matchValue" placeholder="匹配值" style="width: 180px; margin-left: 8px" />
+
+          <el-form-item label="匹配规则" class="advanced__item">
+            <div class="advanced__rule-row">
+              <el-select v-model="form.matchOperator" class="advanced__rule-select">
+                <el-option v-for="o in matchOperators" :key="o.value" :label="o.label" :value="o.value" />
+              </el-select>
+              <el-input v-model="form.matchValue" class="advanced__rule-input" placeholder="匹配值" />
+            </div>
           </el-form-item>
-          <el-form-item label="源正则">
+
+          <el-form-item label="源正则" class="advanced__item">
             <el-input v-model="form.sourceRegex" placeholder="自动重命名：源文件名正则" />
           </el-form-item>
-          <el-form-item label="目标正则">
+
+          <el-form-item label="目标正则" class="advanced__item">
             <el-input v-model="form.targetRegex" placeholder="自动重命名：目标格式" />
           </el-form-item>
-          <el-form-item label="刮削">
-            <el-switch v-model="form.enableTaskScraper" />
+
+          <el-form-item label="刮削" class="advanced__item advanced__switch-item">
+            <div class="advanced__switch-row">
+              <el-switch v-model="form.enableTaskScraper" />
+              <span class="advanced__switch-text">创建后自动进行媒体信息刮削</span>
+            </div>
           </el-form-item>
-        </el-collapse-item>
-      </el-collapse>
+        </div>
+      </section>
 
       <el-form-item label="定时任务">
         <el-switch v-model="form.enableCron" />
@@ -320,7 +346,107 @@ async function submit() {
   color: var(--el-color-danger);
 }
 .advanced {
-  margin: 4px 0 12px;
-  border: none;
+  margin: 10px 0 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--glass-bg) 78%, transparent);
+  box-shadow: var(--glass-shadow-soft);
+  overflow: hidden;
+}
+.advanced__toggle {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.advanced__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.advanced__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.advanced__summary {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.advanced__arrow {
+  flex-shrink: 0;
+  font-size: 16px;
+  color: var(--el-text-color-secondary);
+  transition: transform 0.2s ease;
+}
+.advanced__toggle.is-open .advanced__arrow {
+  transform: rotate(180deg);
+}
+.advanced__body {
+  padding: 0 18px 18px;
+  border-top: 1px solid var(--glass-border);
+}
+.advanced__hint {
+  margin: 14px 0 16px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--glass-track) 72%, transparent);
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.advanced__item {
+  margin-bottom: 14px;
+}
+.advanced__item:last-child {
+  margin-bottom: 0;
+}
+.advanced__rule-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+.advanced__rule-select {
+  width: 130px;
+  flex-shrink: 0;
+}
+.advanced__rule-input {
+  flex: 1;
+}
+.advanced__switch-item :deep(.el-form-item__content) {
+  min-height: 40px;
+}
+.advanced__switch-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.advanced__switch-text {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+@media (max-width: 768px) {
+  .advanced__toggle {
+    padding: 14px 14px 13px;
+  }
+  .advanced__body {
+    padding: 0 14px 14px;
+  }
+  .advanced__rule-row {
+    flex-direction: column;
+  }
+  .advanced__rule-select,
+  .advanced__rule-input {
+    width: 100%;
+  }
 }
 </style>
