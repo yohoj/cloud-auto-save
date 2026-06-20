@@ -161,39 +161,39 @@ const editEmbyReplace = (row: Account) =>
         </template>
       </el-table-column>
 
-      <el-table-column label="别名" min-width="110">
+      <el-table-column label="别名" min-width="90">
         <template #default="{ row }">
           <span class="editable" @click="editAlias(row)">{{ row.alias || '—' }}</span>
         </template>
       </el-table-column>
 
-      <el-table-column label="个人容量" min-width="150" align="center">
+      <el-table-column label="个人容量" min-width="128" align="center">
         <template #default="{ row }">{{ formatCapacity(row.capacity?.cloudCapacityInfo) || '—' }}</template>
       </el-table-column>
 
-      <el-table-column label="家庭容量" min-width="150" align="center">
+      <el-table-column label="家庭容量" min-width="128" align="center">
         <template #default="{ row }">{{ formatCapacity(row.capacity?.familyCapacityInfo) || '—' }}</template>
       </el-table-column>
 
-      <el-table-column label="媒体目录" min-width="170">
+      <el-table-column label="媒体目录" min-width="150" show-overflow-tooltip>
         <template #default="{ row }">
           <span class="editable" @click="editCloudPrefix(row)">{{ row.cloudStrmPrefix || '—' }}</span>
         </template>
       </el-table-column>
 
-      <el-table-column label="本地目录" min-width="170">
+      <el-table-column label="本地目录" min-width="100" show-overflow-tooltip>
         <template #default="{ row }">
           <span class="editable" @click="editLocalPrefix(row)">{{ row.localStrmPrefix || '—' }}</span>
         </template>
       </el-table-column>
 
-      <el-table-column label="Emby路径替换" min-width="170">
+      <el-table-column label="Emby路径替换" min-width="120" show-overflow-tooltip>
         <template #default="{ row }">
           <span class="editable" @click="editEmbyReplace(row)">{{ row.embyPathReplace || '—' }}</span>
         </template>
       </el-table-column>
 
-      <el-table-column label="操作" width="240" fixed="right" align="center">
+      <el-table-column label="操作" width="250" align="center">
         <template #default="{ row }">
           <el-button size="small" :icon="Film" @click="onGenerateStrm(row)">STRM</el-button>
           <el-button size="small" :icon="Edit" @click="onEdit(row)">修改</el-button>
@@ -271,6 +271,11 @@ const editEmbyReplace = (row: Account) =>
   cursor: pointer;
   display: inline-block;
   min-width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
   color: var(--el-text-color-primary);
   border-bottom: 1px dashed transparent;
 }
@@ -280,5 +285,9 @@ const editEmbyReplace = (row: Account) =>
 }
 .data-card__row .editable {
   min-width: 0;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 </style>

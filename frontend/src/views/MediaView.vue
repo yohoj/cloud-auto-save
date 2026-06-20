@@ -160,6 +160,7 @@ async function onTestFntv() {
   justify-content: space-between;
   margin: 0;
   font-size: 18px;
+  margin-bottom: 18px;
 }
 .settings-grid {
   display: grid;
@@ -184,6 +185,9 @@ async function onTestFntv() {
 }
 
 @media (max-width: 768px) {
+  .media-head {
+    margin-bottom: 14px;
+  }
   .settings-grid {
     grid-template-columns: 1fr;
   }

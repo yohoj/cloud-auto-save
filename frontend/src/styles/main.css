@@ -275,16 +275,6 @@ html.dark .el-table--striped .el-table__body tr.el-table__row--striped td.el-tab
 .el-table th.el-table__cell {
   font-weight: 600;
 }
-.el-table .el-table-fixed-column--right,
-.el-table .el-table-fixed-column--left,
-.el-table .el-table-fixed-column--right.is-first-column,
-.el-table .el-table-fixed-column--left.is-last-column {
-  background: transparent !important;
-}
-.el-table .el-table-fixed-column--right::before,
-.el-table .el-table-fixed-column--left::before {
-  background-color: transparent !important;
-}
 .el-tabs__item.is-active {
   font-weight: 600;
 }
