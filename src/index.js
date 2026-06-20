@@ -163,15 +163,23 @@ async function getCloud189PcSession(accessToken) {
     }
 }
 
-const publicDirs = [
+// ---- 前端资源目录解析 ----
+// Vue SPA 构建产物：生产在 dist/public，开发在 frontend/dist（需先 yarn --cwd frontend build）。
+const frontendDir = [
     path.join(__dirname, 'public'),
-    path.join(__dirname, '../src/public')
-];
-const getPublicFile = (fileName) => {
-    const filePath = publicDirs
-        .map(publicDir => path.join(publicDir, fileName))
-        .find(candidate => fsSync.existsSync(candidate));
-    return filePath || path.join(publicDirs[0], fileName);
+    path.join(__dirname, '../frontend/dist')
+].find(dir => fsSync.existsSync(path.join(dir, 'index.html')));
+
+// 开发时前端尚未构建（改用 Vite dev server），页面请求重定向到 Vite
+const VITE_DEV_URL = process.env.VITE_DEV_URL || 'http://localhost:5173';
+
+// 返回 Vue SPA 壳；开发未构建时跳到 Vite dev server。
+const sendSpaShell = (req, res) => {
+    if (frontendDir) {
+        res.sendFile(path.join(frontendDir, 'index.html'));
+    } else {
+        res.redirect(VITE_DEV_URL + req.originalUrl);
+    }
 };
 
 app.use(session({
@@ -211,20 +219,8 @@ const authenticateSession = (req, res, next) => {
     }
 };
 
-// 添加根路径处理
-app.get('/', (req, res) => {
-    if (!req.session.authenticated) {
-        res.redirect('/login');
-    } else {
-        res.sendFile(getPublicFile('index.html'));
-    }
-});
-
-
-// 登录页面
-app.get('/login', (req, res) => {
-    res.sendFile(getPublicFile('login.html'));
-});
+// SPA 入口：根路径与 /login 均返回前端壳（dev 未构建则跳 Vite）；登录态交给客户端路由 + /api 鉴权中间件把控
+app.get(['/', '/login'], sendSpaShell);
 
 // 登录接口
 app.post('/api/auth/login', (req, res) => {
@@ -238,16 +234,28 @@ app.post('/api/auth/login', (req, res) => {
         res.json({ success: false, error: '用户名或密码错误' });
     }
 });
-publicDirs
-    .filter(publicDir => fsSync.existsSync(publicDir))
-    .forEach(publicDir => app.use(express.static(publicDir)));
-// 为所有路由添加认证（除了登录页和登录接口）
+
+// 登出接口：销毁会话
+app.post('/api/auth/logout', (req, res) => {
+    req.session.destroy(() => {
+        res.clearCookie('connect.sid');
+        res.json({ success: true });
+    });
+});
+
+// Vue SPA 静态资源（/assets/* 等）
+if (frontendDir) {
+    app.use(express.static(frontendDir));
+}
+
+// 为所有路由添加认证（前端壳、静态资源、登录/登出、webhook 除外）
 app.use((req, res, next) => {
-    if (req.path === '/' || req.path === '/login' 
-        || req.path === '/api/auth/login' 
-        || req.path === '/api/auth/login' 
+    if (req.path === '/' || req.path === '/login'
+        || req.path === '/api/auth/login'
+        || req.path === '/api/auth/logout'
         || req.path === '/emby/notify'
-        || req.path.match(/\.(css|js|png|jpg|jpeg|gif|ico)$/)) {
+        || req.path.startsWith('/assets/')
+        || req.path.match(/\.(css|js|mjs|png|jpg|jpeg|gif|ico|svg|woff2?|ttf|eot|map|webp|avif|json)$/)) {
         return next();
     }
     authenticateSession(req, res, next);
@@ -1260,6 +1268,15 @@ AppDataSource.initialize().then(async () => {
 
     // 初始化cloudsaver
     setupCloudSaverRoutes(app);
+
+    // SPA history 回退：非 /api、/emby 的 GET 一律返回前端壳，交给 Vue Router 处理
+    app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/api/') || req.path.startsWith('/emby/')) {
+            return next();
+        }
+        sendSpaShell(req, res);
+    });
+
     // 启动服务器
     const port = process.env.PORT || 3000;
     app.listen(port, () => {

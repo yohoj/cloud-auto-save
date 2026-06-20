@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="云盘自动转存">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a84ff"/>
+      <stop offset="1" stop-color="#9b6bff"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <g fill="#ffffff">
+    <circle cx="196" cy="298" r="48"/>
+    <circle cx="316" cy="298" r="48"/>
+    <circle cx="256" cy="258" r="64"/>
+    <rect x="184" y="290" width="144" height="54" rx="27"/>
+  </g>
+  <path d="M256 226 L256 322 M226 296 L256 326 L286 296"
+        fill="none" stroke="#0a84ff" stroke-width="24"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

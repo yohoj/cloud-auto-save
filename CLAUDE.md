@@ -25,7 +25,9 @@ yarn test             # alias for `tsc --noEmit` (so are `lint` and `typecheck`)
 
 - **Mostly CommonJS JavaScript** (`require`/`module.exports`). Only `src/entities/index.ts` and `src/sdk/cloudsaver/*.ts` are TypeScript; `tsconfig.json` has `allowJs: true` and compiles everything to `dist/`.
 - New backend code should follow the existing `.js` + CommonJS style unless you are touching the entities/SDK TS files.
-- Frontend is **vanilla JS** in `src/public/js/` (no framework, no bundler). It is static-served directly and copied to `dist/public` in the Docker build.
+- **Frontend is now Vue 3** (see `doc/vue-migration-plan.md`). The SPA lives in **`frontend/`** (Vite 5 + Vue 3 + TypeScript + Pinia + Vue Router history mode + Element Plus). Build with `cd frontend && yarn build` → `frontend/dist`; dev with `cd frontend && yarn dev` (Vite :5173, proxies `/api` and `/emby` to Express :3000). Type-gate: `yarn --cwd frontend typecheck` (vue-tsc).
+  - In production, `src/index.js` serves the Vue build (`dist/public`, copied from `frontend/dist` by the Dockerfile) at `/`, with a SPA history fallback (`app.get('*')`). Docker base image is **Node 20**.
+  - Frontend structure: `api/` (axios + per-domain modules + SSE), `stores/` (Pinia: auth/accounts/tasks/settings/logs), `views/` (Login/Tasks/Accounts/Media/Settings), `components/` (dialogs + folder tree + log viewer), `composables/`, `utils/`.
 
 ## Architecture
 

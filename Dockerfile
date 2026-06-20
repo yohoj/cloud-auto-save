@@ -1,5 +1,5 @@
-# 使用Node.js v16.19.0作为基础镜像
-FROM node:16.19.0-slim AS builder
+# 使用 Node.js 20 作为构建镜像（Vite 5 需 Node 18+；sqlite3 已验证在 Node 20 可用）
+FROM node:20-slim AS builder
 
 # 设置工作目录
 WORKDIR /home
@@ -7,12 +7,15 @@ WORKDIR /home
 # 复制源码
 COPY . .
 
-# 安装项目依赖
+# 安装后端依赖并编译
 RUN yarn install && \
     yarn build
 
+# 构建前端（独立 frontend/ 工程，产物输出到 frontend/dist）
+RUN cd frontend && yarn install && yarn build
+
 # 构建生产版本
-FROM node:16.19.0-alpine AS production
+FROM node:20-alpine AS production
 
 # 设置工作目录
 WORKDIR /home
@@ -25,7 +28,8 @@ RUN yarn install --production
 
 # 复制构建好的代码
 COPY --from=builder /home/dist ./dist
-COPY --from=builder /home/src/public ./dist/public
+# Vue 构建产物作为主前端（Express 静态托管 dist/public）
+COPY --from=builder /home/frontend/dist ./dist/public
 
 # 安装必要的依赖项
 RUN apk update && \
