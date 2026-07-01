@@ -196,6 +196,10 @@ export class Task {
     // 是否是文件夹
     @Column('boolean', { nullable: true, default: true })
     isFolder!: boolean;
+
+    // 是否保存子目录（默认 true，false 时只转存当前目录下的文件）
+    @Column('boolean', { nullable: true, default: true })
+    saveSubDir!: boolean;
 }
 
 // 常用目录表

@@ -51,7 +51,8 @@ const form = reactive({
   remark: '',
   enableCron: false,
   cronExpression: '',
-  enableTaskScraper: false
+  enableTaskScraper: false,
+  saveSubDir: true
 })
 
 // 原始账号/链接，用于切换后判断是否需重选目录
@@ -112,7 +113,8 @@ async function open(task: Task) {
     remark: task.remark || '',
     enableCron: !!task.enableCron,
     cronExpression: task.cronExpression || '',
-    enableTaskScraper: !!task.enableTaskScraper
+    enableTaskScraper: !!task.enableTaskScraper,
+    saveSubDir: task.saveSubDir !== false
   })
   original.accountId = task.accountId
   original.shareLink = task.shareLink || ''
@@ -198,6 +200,7 @@ async function submit() {
       enableCron: form.enableCron,
       cronExpression: form.cronExpression,
       enableTaskScraper: form.enableTaskScraper,
+      saveSubDir: form.saveSubDir,
       // 源目录为空时不下发，由后端默认取新分享根目录
       ...(form.shareFolderId
         ? { shareFolderId: form.shareFolderId, shareFolderName: form.shareFolderName }
@@ -239,6 +242,10 @@ async function submit() {
             <el-button :icon="FolderOpened" @click="pickTarget">选择</el-button>
           </template>
         </el-input>
+      </el-form-item>
+      <el-form-item label=" ">
+        <el-checkbox v-model="form.saveSubDir">保存子目录</el-checkbox>
+        <span class="save-subdir-hint">取消勾选则只转存当前目录下的文件，不含子目录</span>
       </el-form-item>
       <el-form-item label="分享源目录">
         <el-input v-model="form.shareFolderName" readonly placeholder="留空则取分享根目录">
@@ -292,3 +299,11 @@ async function submit() {
     <FolderTreeDialog ref="shareDialogRef" />
   </el-dialog>
 </template>
+
+<style scoped>
+.save-subdir-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+</style>

@@ -111,7 +111,7 @@ async function onCreateFolder() {
 </script>
 
 <template>
-  <el-dialog v-model="visible" :title="title" width="480px" @closed="settle(null)">
+  <el-dialog v-model="visible" :title="title" width="480px" append-to-body @closed="settle(null)">
     <div class="ft-toolbar">
       <el-button v-if="enableCreate" size="small" :icon="FolderAdd" @click="onCreateFolder">
         在{{ selected ? `「${selected.name}」下` : '根目录' }}新建文件夹

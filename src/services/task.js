@@ -71,7 +71,8 @@ class TaskService {
             sourceRegex: taskDto.sourceRegex,
             targetRegex: taskDto.targetRegex,
             enableTaskScraper: taskDto.enableTaskScraper,
-            isFolder: taskDto.isFolder
+            isFolder: taskDto.isFolder,
+            saveSubDir: taskDto.saveSubDir !== false // 默认为 true
         };
     }
 
@@ -746,15 +747,19 @@ class TaskService {
             const rootFiles = (shareDir.fileListAO.fileList || []).map(f => ({
                 ...f, _shareFolderId: task.shareFolderId, _relativeDir: ''
             }));
+            // saveSubDir 默认为 true，为 false 时只转存当前目录文件，不递归子目录
+            const shouldSaveSubDir = task.saveSubDir !== false;
             const subDirFiles = [];
-            for (const folder of shareDir.fileListAO.folderList || []) {
-                const subFolderId = this._getShareFolderId(folder);
-                const subFolderName = this._getShareFolderName(folder);
-                if (!subFolderId || !subFolderName) continue;
-                const childFiles = await this._collectShareFilesRecursive(
-                    cloud189, task, subFolderId, subFolderName
-                );
-                subDirFiles.push(...childFiles);
+            if (shouldSaveSubDir) {
+                for (const folder of shareDir.fileListAO.folderList || []) {
+                    const subFolderId = this._getShareFolderId(folder);
+                    const subFolderName = this._getShareFolderName(folder);
+                    if (!subFolderId || !subFolderName) continue;
+                    const childFiles = await this._collectShareFilesRecursive(
+                        cloud189, task, subFolderId, subFolderName
+                    );
+                    subDirFiles.push(...childFiles);
+                }
             }
             let shareFiles = [...rootFiles, ...subDirFiles];
             const sourceFileCount = shareDir.fileListAO.fileList?.length || 0;
@@ -939,7 +944,7 @@ class TaskService {
             await this._applyShareLinkUpdate(task, updates);
         }
         // 只允许更新特定字段
-        const allowedFields = ['resourceName', 'realFolderId', 'currentEpisodes', 'totalEpisodes', 'status','realFolderName', 'shareFolderName', 'shareFolderId', 'matchPattern','matchOperator','matchValue','remark', 'enableCron', 'cronExpression', 'enableTaskScraper'];
+        const allowedFields = ['resourceName', 'realFolderId', 'currentEpisodes', 'totalEpisodes', 'status','realFolderName', 'shareFolderName', 'shareFolderId', 'matchPattern','matchOperator','matchValue','remark', 'enableCron', 'cronExpression', 'enableTaskScraper', 'saveSubDir'];
         for (const field of allowedFields) {
             if (updates[field] !== undefined) {
                 task[field] = updates[field];

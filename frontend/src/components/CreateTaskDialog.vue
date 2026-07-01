@@ -36,7 +36,8 @@ const form = reactive({
   targetRegex: '',
   enableTaskScraper: false,
   enableCron: false,
-  cronExpression: ''
+  cronExpression: '',
+  saveSubDir: true
 })
 
 const matchOperators = [
@@ -109,7 +110,8 @@ function resetForm() {
     targetRegex: '',
     enableTaskScraper: false,
     enableCron: false,
-    cronExpression: ''
+    cronExpression: '',
+    saveSubDir: true
   })
   shareFolders.value = []
   parseError.value = ''
@@ -195,7 +197,8 @@ async function submit() {
       sourceRegex: form.sourceRegex,
       targetRegex: form.targetRegex,
       enableTaskScraper: form.enableTaskScraper,
-      selectedFolders: [form.selectedShareFolderId]
+      selectedFolders: [form.selectedShareFolderId],
+      saveSubDir: form.saveSubDir
     })
     if (res.success) {
       ElMessage.success('任务创建完成，已在后台开始执行')
@@ -260,6 +263,11 @@ async function submit() {
             <el-button :icon="FolderOpened" @click="pickTargetFolder">选择</el-button>
           </template>
         </el-input>
+      </el-form-item>
+
+      <el-form-item label=" ">
+        <el-checkbox v-model="form.saveSubDir">保存子目录</el-checkbox>
+        <span class="save-subdir-hint">取消勾选则只转存当前目录下的文件，不含子目录</span>
       </el-form-item>
 
       <el-form-item label="总集数">
@@ -344,6 +352,11 @@ async function submit() {
   margin-left: 10px;
   font-size: 12px;
   color: var(--el-color-danger);
+}
+.save-subdir-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 .advanced {
   margin: 10px 0 14px;
