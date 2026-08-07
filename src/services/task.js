@@ -1356,6 +1356,7 @@ class TaskService {
         logTaskEvent(error);
         const maxRetries = ConfigService.getConfigValue('task.maxRetries');
         const retryInterval = ConfigService.getConfigValue('task.retryInterval');
+        const resourceName = task.shareFolderName ? `${task.resourceName}/${task.shareFolderName}` : task.resourceName || '未知';
         // 初始化重试次数
         if (!task.retryCount) {
             task.retryCount = 0;
@@ -1368,10 +1369,14 @@ class TaskService {
             // 设置下次重试时间
             task.nextRetryTime = new Date(Date.now() + retryInterval * 1000);
             logTaskEvent(`任务将在 ${retryInterval} 秒后重试 (${task.retryCount}/${maxRetries})`);
+            // 发送重试通知
+            this.messageUtil.sendMessage(`⚠️ 任务[${resourceName}]转存失败，正在重试(${task.retryCount}/${maxRetries})\n失败原因: ${error.message}`);
         } else {
             task.status = 'failed';
             task.lastError = `${error.message} (已达到最大重试次数 ${maxRetries})`;
             logTaskEvent(`任务达到最大重试次数 ${maxRetries}，标记为失败`);
+            // 达到最大重试次数，发送最终失败通知
+            this.messageUtil.sendMessage(`❌ 任务[${resourceName}]转存失败\n失败原因: ${error.message}\n已重试${maxRetries}次，标记为失败`);
         }
         
         await this.taskRepo.save(task);
