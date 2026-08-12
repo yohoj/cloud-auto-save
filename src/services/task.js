@@ -1351,6 +1351,11 @@ class TaskService {
         return [matchResult, matchValue];
     }
 
+    _isNonRetryableTaskError(error) {
+        const message = error?.message || String(error || '');
+        return message.includes('好友已取消了分享');
+    }
+
     // 任务失败处理逻辑
     async _handleTaskFailure(task, error) {
         logTaskEvent(error);
@@ -1360,6 +1365,16 @@ class TaskService {
         // 初始化重试次数
         if (!task.retryCount) {
             task.retryCount = 0;
+        }
+
+        if (this._isNonRetryableTaskError(error)) {
+            task.status = 'failed';
+            task.nextRetryTime = null;
+            task.lastError = `${error.message} (不再重试)`;
+            logTaskEvent('任务失败原因不可重试，标记为失败');
+            this.messageUtil.sendMessage(`❌ 任务[${resourceName}]转存失败\n失败原因: ${error.message}\n分享已取消，不再重试`);
+            await this.taskRepo.save(task);
+            return '';
         }
         
         if (task.retryCount < maxRetries) {

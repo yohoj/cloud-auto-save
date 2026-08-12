@@ -9,7 +9,8 @@
     "dev": "ts-node src/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "test": "tsc --noEmit"
+    "test": "tsc --noEmit",
+    "test:unit": "node -r ts-node/register --test test/*.test.js"
   },
   "dependencies": {
     "@netdrive-sdk/log": "1.0.0",
