@@ -83,6 +83,11 @@ class ConfigService {
         api_key: '',        // 飞牛影视 API 密钥
         mdb_mapping: '',    // 媒体库映射，格式：关键字:mdb_name，支持换行或分号分隔
       },
+      dingtalk: {
+        enable: false,      // 是否启用钉钉通知
+        webhook: '',        // 钉钉机器人 Webhook 地址
+        secret: '',         // 钉钉机器人签名密钥（可选）
+      },
       system: {
         username: 'admin',
         password: 'admin',
@@ -139,6 +144,7 @@ class ConfigService {
       'fntv.password',
       'fntv.secret_string',
       'fntv.api_key',
+      'dingtalk.secret',
       'system.password',
       'system.apiKey',
       'system.sessionSecret',

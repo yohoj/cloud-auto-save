@@ -35,7 +35,7 @@
 
 ### 通知与自动化
 
-- 支持企业微信机器人、Telegram、WxPusher、Bark、PushPlus。
+- 支持企业微信机器人、Telegram、WxPusher、Bark、PushPlus、钉钉。
 - 支持自定义推送，可配置请求方法、URL、请求头和模板。
 - 支持 Telegram Bot 直接发送分享链接创建任务。
 - 支持 CloudSaver 对接。
@@ -352,6 +352,7 @@ Emby 删除媒体时，本系统可根据路径映射删除对应 STRM 文件。
 - WxPusher。
 - Bark。
 - PushPlus。
+- 钉钉机器人。
 - 自定义推送。
 
 自定义推送适合对接 Server 酱、自建 Webhook、消息网关等服务。

@@ -59,6 +59,11 @@ class MessageUtil {
                 api_key: settings.fntv?.api_key || '',
                 mdb_mapping: settings.fntv?.mdb_mapping || '',
             },
+            dingtalk: {
+                enabled: settings.dingtalk?.enable || false,
+                webhook: settings.dingtalk?.webhook || '',
+                secret: settings.dingtalk?.secret || '',
+            },
             customPush: settings.customPush || []
         });
     }

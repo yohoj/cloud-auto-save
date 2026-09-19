@@ -36,6 +36,7 @@ export function defaultConfig(): AppConfig {
     pushplus: { enable: false, token: '', topic: '', channel: 'wechat', webhook: '', to: '' },
     smartStrm: { enable: false, webhook: '', taskMapping: '' },
     fntv: { enable: false, base_url: '', username: '', password: '', secret_string: '', api_key: '', mdb_mapping: '' },
+    dingtalk: { enable: false, webhook: '', secret: '' },
     system: { username: '', password: '', baseUrl: '', apiKey: '', corsOrigins: '' },
     strm: { enable: false },
     emby: { enable: false, serverUrl: '', apiKey: '' },
@@ -83,7 +84,9 @@ export const useSettingsStore = defineStore('settings', () => {
       system: c.system,
       pushplus: c.pushplus,
       smartStrm: c.smartStrm,
-      customPush: c.customPush
+      customPush: c.customPush,
+      fntv: c.fntv,
+      dingtalk: c.dingtalk
     })
   }
 

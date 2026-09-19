@@ -6,6 +6,7 @@ const PushPlusService = require('./PushPlusService');
 const CustomPushService = require('./CustomPushService');
 const SmartStrmService = require('./SmartStrmService');
 const FntvService = require('./FntvService');
+const DingTalkService = require('./DingTalkService');
 class MessageManager {
     constructor() {
         this.services = [];
@@ -78,6 +79,13 @@ class MessageManager {
             const fntvService = new FntvService(config.fntv);
             fntvService.initialize();
             this.services.push(fntvService);
+        }
+
+        // 钉钉配置
+        if (config.dingtalk?.enabled) {
+            const dingtalkService = new DingTalkService(config.dingtalk);
+            dingtalkService.initialize();
+            this.services.push(dingtalkService);
         }
 
         // 自定义推送

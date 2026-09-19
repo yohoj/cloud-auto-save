@@ -158,6 +158,17 @@ async function save() {
             <el-input v-model="store.config.pushplus.channel" placeholder="wechat/webhook/cp/sms/mail" />
           </el-form-item>
 
+          <el-divider content-position="left">钉钉</el-divider>
+          <el-form-item label="启用">
+            <el-switch v-model="store.config.dingtalk.enable" />
+          </el-form-item>
+          <el-form-item label="Webhook">
+            <el-input v-model="store.config.dingtalk.webhook" placeholder="https://oapi.dingtalk.com/robot/send?access_token=..." />
+          </el-form-item>
+          <el-form-item label="签名密钥">
+            <el-input v-model="store.config.dingtalk.secret" type="password" show-password placeholder="可选，用于安全设置加签" />
+          </el-form-item>
+
           <el-divider content-position="left">SmartStrm</el-divider>
           <el-form-item label="启用">
             <el-switch v-model="store.config.smartStrm.enable" />

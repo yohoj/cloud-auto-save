@@ -58,6 +58,7 @@ export interface AppConfig {
     api_key: string
     mdb_mapping: string
   }
+  dingtalk: { enable: boolean; webhook: string; secret: string }
   system: { username: string; password: string; baseUrl: string; apiKey: string; corsOrigins: string }
   strm: { enable: boolean }
   emby: { enable: boolean; serverUrl: string; apiKey: string }

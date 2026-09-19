@@ -87,7 +87,7 @@ TypeORM + SQLite (`data/database.sqlite`, WAL mode). Three entities: **Account**
 
 ### Messaging — `services/message.js` (`MessageUtil`) + `services/message/MessageManager.js`
 
-`MessageUtil` wraps the singleton `MessageManager`. **Naming gotcha:** `ConfigService` stores `enable` (e.g. `telegram.enable`), but `MessageManager.initialize` reads `enabled` — `MessageUtil._init()` does the `enable`→`enabled` mapping. After settings change, the `/api/settings` route calls `messageUtil.updateConfig()` to re-init all channels. Channels: 企业微信/Wework, Telegram, WxPusher, Bark, PushPlus, SmartStrm, 飞牛影视(Fntv), plus always-on CustomPush.
+`MessageUtil` wraps the singleton `MessageManager`. **Naming gotcha:** `ConfigService` stores `enable` (e.g. `telegram.enable`), but `MessageManager.initialize` reads `enabled` — `MessageUtil._init()` does the `enable`→`enabled` mapping. After settings change, the `/api/settings` route calls `messageUtil.updateConfig()` to re-init all channels. Channels: 企业微信/Wework, Telegram, WxPusher, Bark, PushPlus, SmartStrm, 飞牛影视(Fntv), 钉钉/DingTalk, plus always-on CustomPush.
 
 ### Auth
 
