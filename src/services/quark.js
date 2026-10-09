@@ -37,6 +37,8 @@ class QuarkService {
         this.account = account;
         this.cookie = account.cookies || account.password || '';
         this.proxy = ProxyUtil.getProxy('quark');
+        this._cookieSaveTimer = null;
+        this._renewCookie = null;
         this.client = got.extend({
             prefixUrl: BASE_URL,
             timeout: { request: 30000 },
@@ -50,12 +52,20 @@ class QuarkService {
             hooks: {
                 beforeRequest: [
                     options => {
+                        // 每次请求动态取最新 cookie（got 的 defaults.headers 已冻结，无法事后修改）
+                        options.headers.cookie = this._renewCookie || this.cookie;
                         if (this.proxy) {
                             options.agent = {
                                 http: new HttpProxyAgent(this.proxy),
                                 https: new HttpsProxyAgent(this.proxy)
                             };
                         }
+                    }
+                ],
+                afterResponse: [
+                    (response) => {
+                        this._mergeSetCookie(response.headers?.['set-cookie']);
+                        return response;
                     }
                 ]
             }
@@ -67,6 +77,10 @@ class QuarkService {
     }
 
     async request(action, options = {}) {
+        return this._requestWithRetry(action, options, true);
+    }
+
+    async _requestWithRetry(action, options, allowRenew) {
         try {
             const response = await this.client(action.replace(/^\//, ''), {
                 ...options,
@@ -75,14 +89,29 @@ class QuarkService {
                     ...(options.searchParams || {})
                 }
             }).json();
+            if (allowRenew && this._isAuthFailure(response)) {
+                logTaskEvent('夸克登录态可能已失效，正在自动续期...');
+                const renewed = await this._renewSession();
+                if (renewed) {
+                    return this._requestWithRetry(action, options, false);
+                }
+            }
             if (response?.status && response.status !== 200) {
                 logTaskEvent(`请求夸克网盘接口失败: ${response.message || response.status}`);
             }
             return response;
         } catch (error) {
             if (error instanceof got.HTTPError) {
+                this._mergeSetCookie(error.response?.headers?.['set-cookie']);
                 const body = error.response?.body || '';
                 logTaskEvent(`请求夸克网盘接口失败: HTTP ${error.response?.statusCode || 'unknown'} ${body.slice(0, 200)}`);
+                if (allowRenew && (error.response?.statusCode === 401 || error.response?.statusCode === 403) && this.cookie.includes('__puus')) {
+                    logTaskEvent('夸克登录态可能已失效，正在自动续期...');
+                    const renewed = await this._renewSession();
+                    if (renewed) {
+                        return this._requestWithRetry(action, options, false);
+                    }
+                }
                 try {
                     const parsed = JSON.parse(body);
                     if (parsed && typeof parsed === 'object') {
@@ -101,6 +130,115 @@ class QuarkService {
                 logTaskEvent('请求夸克网盘接口异常: ' + error.message);
             }
             return null;
+        }
+    }
+
+    _isAuthFailure(response) {
+        if (!response || !this.cookie.includes('__puus')) return false;
+        const httpStatus = response.httpStatusCode;
+        if (httpStatus === 401 || httpStatus === 403) return true;
+        if (response.status === 401 || response.status === 403) return true;
+        if (response.status && response.status !== 200) return true;
+        if (response.code && response.code !== 0) return true;
+        return false;
+    }
+
+    async _renewSession() {
+        // 续期期间 hook 会改发去掉 __puus 的 cookie，诱导服务端 Set-Cookie 下发新会话
+        const previousRenewCookie = this._renewCookie;
+        this._renewCookie = this._stripCookie(this.cookie, ['__puus']);
+        try {
+            try {
+                await this.client('1/clouddrive/config', {
+                    method: 'GET',
+                    searchParams: { ...DEFAULT_PARAMS }
+                });
+                return true;
+            } catch (error) {
+                if (error instanceof got.HTTPError) {
+                    this._mergeSetCookie(error.response?.headers?.['set-cookie']);
+                    if (error.response?.statusCode === 404) {
+                        try {
+                            await this.client('1/clouddrive/file/sort', {
+                                method: 'GET',
+                                searchParams: { ...DEFAULT_PARAMS, pdir_fid: '0', _page: 1, _size: 1, _sort: 'file_type:asc,updated_at:desc' }
+                            });
+                            return true;
+                        } catch (retryError) {
+                            if (retryError instanceof got.HTTPError) {
+                                this._mergeSetCookie(retryError.response?.headers?.['set-cookie']);
+                            }
+                            return false;
+                        }
+                    }
+                }
+                return false;
+            }
+        } finally {
+            this._renewCookie = previousRenewCookie;
+        }
+    }
+
+    _mergeSetCookie(setCookie) {
+        if (!setCookie) return;
+        const entries = Array.isArray(setCookie) ? setCookie : [setCookie];
+        const tracked = ['__puus', '__pus', '__kpids'];
+        const map = this._parseCookieMap(this.cookie);
+        let changed = false;
+        for (const entry of entries) {
+            const pair = entry.split(';')[0].trim();
+            const eq = pair.indexOf('=');
+            if (eq <= 0) continue;
+            const name = pair.slice(0, eq).trim();
+            const value = pair.slice(eq + 1).trim();
+            if (!tracked.includes(name)) continue;
+            if (map.get(name) !== value) {
+                map.set(name, value);
+                changed = true;
+            }
+        }
+        if (!changed) return;
+        this.cookie = Array.from(map.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
+        this.account.cookies = this.cookie;
+        this._scheduleCookiePersist();
+    }
+
+    _parseCookieMap(cookie) {
+        const map = new Map();
+        for (const part of String(cookie || '').split(';')) {
+            const trimmed = part.trim();
+            if (!trimmed) continue;
+            const eq = trimmed.indexOf('=');
+            if (eq <= 0) continue;
+            map.set(trimmed.slice(0, eq).trim(), trimmed.slice(eq + 1).trim());
+        }
+        return map;
+    }
+
+    _stripCookie(cookie, names) {
+        const map = this._parseCookieMap(cookie);
+        names.forEach(n => map.delete(n));
+        return Array.from(map.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
+    }
+
+    _scheduleCookiePersist() {
+        if (this._cookieSaveTimer) return;
+        this._cookieSaveTimer = setTimeout(() => {
+            this._cookieSaveTimer = null;
+            this._persistCookie();
+        }, 2000);
+    }
+
+    async _persistCookie() {
+        const accountId = this.account?.id;
+        if (!accountId) return;
+        try {
+            // 动态加载 database 模块，避免顶层依赖；不可用时静默跳过
+            const { getAccountRepository } = require('../database');
+            const accountRepo = getAccountRepository();
+            await accountRepo.update({ id: accountId }, { cookies: this.cookie });
+        } catch (error) {
+            // DB 未初始化或写失败时忽略，后续请求可再次触发
         }
     }
 
