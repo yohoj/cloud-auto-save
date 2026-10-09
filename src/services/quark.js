@@ -12,6 +12,12 @@ class QuarkService {
 
     static getInstance(account) {
         const key = account.username;
+        const cookie = account.cookies || account.password || '';
+        const existing = this.instances.get(key);
+        // cookie 已更新时丢弃旧实例，避免用过期 cookie 校验/请求
+        if (existing && cookie && existing.cookie !== cookie) {
+            this.instances.delete(key);
+        }
         if (!this.instances.has(key)) {
             this.instances.set(key, new QuarkService(account));
         }
