@@ -16,7 +16,18 @@ class StrmService {
         this.pgid = process.env.PGID || 0;
         this.dirMode = parseInt(process.env.STRM_DIR_MODE || '775', 8);
         this.fileMode = parseInt(process.env.STRM_FILE_MODE || '664', 8);
+        // STRM生成失败重试：重试次数与重试间隔（毫秒）
+        this.strmRetryTimes = this._parseEnvInt(process.env.STRM_RETRY_TIMES, 3);
+        this.strmRetryIntervalMs = this._parseEnvInt(process.env.STRM_RETRY_INTERVAL_MS, 2000);
         this.messageUtil = new MessageUtil();
+    }
+
+    _parseEnvInt(value, defaultValue) {
+        const parsed = parseInt(value, 10);
+        if (Number.isNaN(parsed)) {
+            return defaultValue;
+        }
+        return Math.max(0, parsed);
     }
 
     // 确保目录存在并设置权限和组
@@ -355,6 +366,45 @@ class StrmService {
         return content;
     }
 
+    _sleep(ms) {
+        if (!ms || ms <= 0) {
+            return Promise.resolve();
+        }
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    /**
+     * 生成并写入 STRM 文件，失败时按配置重试
+     * @returns {Promise<number>} 实际使用的尝试次数
+     */
+    async _writeStrmWithRetry(account, relativePath, fileName, fileInfo, strmPath) {
+        const maxAttempts = 1 + this.strmRetryTimes;
+        let lastError = null;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                const content = await this._buildStrmContent(account, relativePath, fileName, fileInfo);
+                await fs.writeFile(strmPath, content, 'utf8');
+                if (process.getuid && process.getuid() === 0) {
+                    await fs.chown(strmPath, parseInt(this.puid), parseInt(this.pgid));
+                }
+                await fs.chmod(strmPath, this.fileMode);
+                return attempt;
+            } catch (error) {
+                lastError = error;
+                if (attempt < maxAttempts) {
+                    logTaskEvent(`生成STRM文件失败(第 ${attempt}/${maxAttempts} 次), 稍后重试: ${fileName}, 错误: ${error.message}`);
+                    await this._sleep(this.strmRetryIntervalMs * attempt);
+                }
+            }
+        }
+        const error = new Error(lastError?.message || '未知错误');
+        error.attempts = maxAttempts;
+        if (lastError) {
+            error.cause = lastError;
+        }
+        throw error;
+    }
+
     /**
      * 生成 STRM 文件
      * @param {Array} files - 文件列表，每个文件对象需包含 name 属性
@@ -427,23 +477,17 @@ class StrmService {
                         continue;
                     }
 
-                    // 生成STRM文件内容
-                    const content = await this._buildStrmContent(task.account, contentRelativePath, fileName, file);
-                    await fs.writeFile(strmPath, content, 'utf8');
-                    // 设置文件权限
-                    if (process.getuid && process.getuid() === 0) {
-                        await fs.chown(strmPath, parseInt(this.puid), parseInt(this.pgid));
-                    }
-                    await fs.chmod(strmPath, this.fileMode);
+                    // 生成STRM文件内容并写入，失败时自动重试
+                    const attempts = await this._writeStrmWithRetry(task.account, contentRelativePath, fileName, file, strmPath);
                     results.push({
                         originalFile: fileName,
                         strmFile: `${strmBaseName}.strm`,
                         path: strmPath
                     });
-                    logTaskEvent(`生成STRM文件成功: ${strmPath}`);
+                    logTaskEvent(`生成STRM文件成功: ${strmPath}${attempts > 1 ? ` (重试 ${attempts - 1} 次后成功)` : ''}`);
                     success++
                 } catch (error) {
-                    logTaskEvent(`生成STRM文件失败: ${fileName}, 错误: ${error.message}`);
+                    logTaskEvent(`生成STRM文件失败: ${fileName}, 已重试 ${this.strmRetryTimes} 次, 错误: ${error.message}`);
                     failed++
                 }
             }
@@ -566,21 +610,15 @@ class StrmService {
 
                     await this._ensureDirectoryExists(targetDir);
 
-                    // 生成STRM文件内容
-                    const content = await this._buildStrmContent(account, relativePath, file.name, file);
-                    // 写入STRM文件
-                    await fs.writeFile(strmPath, content, 'utf8');
-                    if (process.getuid && process.getuid() === 0) {
-                        await fs.chown(strmPath, parseInt(this.puid), parseInt(this.pgid));
-                    }
-                    await fs.chmod(strmPath, this.fileMode);
+                    // 生成STRM文件内容并写入，失败时自动重试
+                    const attempts = await this._writeStrmWithRetry(account, relativePath, file.name, file, strmPath);
 
                     stats.success++;
-                    logTaskEvent(`生成STRM文件成功: ${strmPath}`);
+                    logTaskEvent(`生成STRM文件成功: ${strmPath}${attempts > 1 ? ` (重试 ${attempts - 1} 次后成功)` : ''}`);
                 }
             } catch (error) {
                 stats.failed++;
-                logTaskEvent(`处理文件失败: ${file.name}, 错误: ${error.message}`);
+                logTaskEvent(`处理文件失败: ${file.name}, 已重试 ${this.strmRetryTimes} 次, 错误: ${error.message}`);
             }
         }
     }
