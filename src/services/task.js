@@ -15,12 +15,15 @@ const { TaskEventHandler } = require('./taskEventHandler');
 const AIService = require('./ai');
 const harmonizedFilter = require('../utils/BloomFilter');
 const alistService = require('./alistService');
+const { default: cloudSaverSDK } = require('../sdk/cloudsaver/sdk');
 
 class TaskService {
     constructor(taskRepo, accountRepo) {
         this.taskRepo = taskRepo;
         this.accountRepo = accountRepo;
         this.messageUtil = new MessageUtil();
+        this.cloudUtils = CloudUtils;
+        this.cloudSaverSDK = cloudSaverSDK;
         this.eventService = EventService.getInstance();
         // 如果还没有taskComplete事件的监听器，则添加
         if (!this.eventService.hasListeners('taskComplete')) {
@@ -1356,6 +1359,162 @@ class TaskService {
         return message.includes('好友已取消了分享');
     }
 
+    // 归一化分享链接，用于判断搜索结果中哪一条是当前任务正在使用的链接
+    _normalizeShareLink(link) {
+        const text = String(link || '').trim();
+        if (!text) {
+            return '';
+        }
+        try {
+            const parsed = this.cloudUtils.parseCloudShare(text).url || text;
+            const url = new URL(parsed);
+            return `${url.hostname.toLowerCase()}${url.pathname.replace(/\/+$/, '')}${url.search}`;
+        } catch (error) {
+            return text.replace(/\/+$/, '');
+        }
+    }
+
+    // 分享链接身份标识，兼容同一分享的不同链接格式
+    _getShareLinkIdentity(link, cloudType) {
+        const text = String(link || '').trim();
+        if (!text) {
+            return '';
+        }
+        try {
+            const url = this.cloudUtils.parseCloudShare(text).url || text;
+            const shareCode = this.cloudUtils.parseShareCode(url, { cloudType });
+            if (shareCode) {
+                return `${cloudType}:${shareCode}`;
+            }
+        } catch (error) {
+            // 解析失败时回退到链接归一化比较
+        }
+        return this._normalizeShareLink(text);
+    }
+
+    // 通过 CloudSaver 搜索任务名，按搜索结果顺序返回下一个同网盘分享链接
+    async _searchReplacementShareLink(task, cloudType) {
+        if (!cloudType || !this.cloudSaverSDK?.enabled) {
+            return '';
+        }
+        const keyword = String(task.resourceName || '').trim();
+        if (!keyword) {
+            return '';
+        }
+        logTaskEvent(`任务 ${task.id}: 分享已取消，尝试使用 CloudSaver 搜索[${keyword}]`);
+        const results = await this.cloudSaverSDK.search(keyword);
+        const sameCloudLinks = (results || [])
+            .filter(item => item.cloudType === cloudType && item?.cloudLinks?.[0]?.link)
+            .map(item => item.cloudLinks[0].link);
+        if (sameCloudLinks.length === 0) {
+            return '';
+        }
+
+        // 已替换过的任务从当前链接之后继续尝试，避免重复使用同一个链接
+        const currentIdentity = this._getShareLinkIdentity(task.shareLink, cloudType);
+        const currentIndex = sameCloudLinks.findIndex(
+            link => this._getShareLinkIdentity(link, cloudType) === currentIdentity
+        );
+        const candidates = currentIndex >= 0
+            ? sameCloudLinks.slice(currentIndex + 1)
+            : sameCloudLinks.filter(link => this._getShareLinkIdentity(link, cloudType) !== currentIdentity);
+        return candidates[0] || '';
+    }
+
+    // 计算替换链接后的源目录: 不保存子目录时优先使用根目录下唯一的子目录
+    async _resolveReplacementShareFolder(cloud, task, shareInfo, accessCode) {
+        const rootFolderId = shareInfo.fileId;
+        if (task.saveSubDir !== false) {
+            return { folderId: rootFolderId, folderName: '' };
+        }
+        try {
+            const rootDir = await cloud.listShareDir(
+                shareInfo.shareId,
+                rootFolderId,
+                shareInfo.shareMode,
+                accessCode,
+                task.isFolder !== false
+            );
+            const folders = rootDir?.fileListAO?.folderList || [];
+            if (folders.length === 1) {
+                const folderId = this._getShareFolderId(folders[0]);
+                const folderName = this._getShareFolderName(folders[0]);
+                if (folderId && folderName) {
+                    logTaskEvent(`任务 ${task.id}: 不保存子目录，使用分享根目录下唯一的子目录[${folderName}]`);
+                    return { folderId, folderName };
+                }
+            }
+        } catch (error) {
+            logTaskEvent(`任务 ${task.id}: 获取分享根目录失败，保持根目录: ${error.message}`);
+        }
+        return { folderId: rootFolderId, folderName: '' };
+    }
+
+    // 解析并应用替换后的分享链接，刷新任务缓存中的分享信息
+    async _applyReplacementShareLink(task, shareLink) {
+        const account = task.account
+            || (this.accountRepo ? await this.accountRepo.findOneBy({ id: task.accountId }) : null);
+        if (!account) {
+            throw new Error('账号不存在');
+        }
+
+        const { url, accessCode } = this.cloudUtils.parseCloudShare(shareLink);
+        if (!url) {
+            throw new Error('无效的分享链接');
+        }
+        const linkCloudType = this.cloudUtils.getShareLinkCloudType(url);
+        const accountCloudType = this.cloudUtils.isQuarkAccount(account) ? 'quark' : 'cloud189';
+        if (linkCloudType && linkCloudType !== accountCloudType) {
+            throw new Error('分享链接与账号网盘类型不一致');
+        }
+
+        const cloud = this.cloudUtils.getService(account);
+        const shareCode = this.cloudUtils.parseShareCode(url, account);
+        const shareInfo = await this.getShareInfo(cloud, shareCode, accessCode);
+        if (shareInfo.shareMode == 1) {
+            if (!accessCode) {
+                throw new Error('分享链接为加密链接, 请提供访问码');
+            }
+            const accessCodeResponse = await cloud.checkAccessCode(shareCode, accessCode);
+            if (!accessCodeResponse?.shareId) {
+                throw new Error('访问码无效');
+            }
+            shareInfo.shareId = accessCodeResponse.shareId;
+            shareInfo.shareMode = accessCodeResponse.stoken || shareInfo.shareMode;
+        }
+        if (!shareInfo.shareId) {
+            throw new Error('获取分享信息失败');
+        }
+
+        const { folderId, folderName } = await this._resolveReplacementShareFolder(cloud, task, shareInfo, accessCode);
+        task.shareLink = url;
+        task.accessCode = accessCode;
+        task.shareId = shareInfo.shareId;
+        task.shareFileId = shareInfo.fileId;
+        task.shareMode = shareInfo.shareMode;
+        task.shareFolderId = folderId;
+        task.shareFolderName = folderName;
+        return url;
+    }
+
+    // 分享被取消时自动替换为 CloudSaver 搜索到的同网盘链接
+    async _tryReplaceCancelledShare(task) {
+        try {
+            const cloudType = task.shareLink ? this.cloudUtils.getShareLinkCloudType(task.shareLink) : '';
+            const shareLink = await this._searchReplacementShareLink(task, cloudType);
+            if (!shareLink) {
+                logTaskEvent(`任务 ${task.id}: 未搜索到可替换的同网盘分享链接`);
+                return '';
+            }
+            const appliedLink = await this._applyReplacementShareLink(task, shareLink);
+            logTaskEvent(`任务 ${task.id}: 已自动替换分享链接为 ${appliedLink}`);
+            return appliedLink;
+        } catch (replaceError) {
+            logTaskEvent(`任务 ${task.id}: 自动替换分享链接失败: ${replaceError.message}`);
+            return '';
+        }
+    }
+
     // 任务失败处理逻辑
     async _handleTaskFailure(task, error) {
         logTaskEvent(error);
@@ -1368,6 +1527,18 @@ class TaskService {
         }
 
         if (this._isNonRetryableTaskError(error)) {
+            const replacementLink = await this._tryReplaceCancelledShare(task);
+            if (replacementLink) {
+                task.status = 'processing';
+                task.retryCount = 0;
+                task.nextRetryTime = null;
+                task.lastError = `${error.message} (已自动替换分享链接，正在重试)`;
+                logTaskEvent(`任务 ${task.id}: 已自动替换分享链接，立即执行任务`);
+                this.messageUtil.sendMessage(`♻️ 任务[${resourceName}]的分享已被取消，已自动替换为新的同网盘链接并立即重试\n新链接: ${replacementLink}`);
+                await this.taskRepo.save(task);
+                // 不再依赖内置重试任务，替换后直接执行
+                return await this.processTask(task);
+            }
             task.status = 'failed';
             task.nextRetryTime = null;
             task.lastError = `${error.message} (不再重试)`;
