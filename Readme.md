@@ -149,6 +149,7 @@ Docker 容器内主要目录：
 | `PGID` | STRM 文件属组 GID | `0` |
 | `STRM_DIR_MODE` | STRM 目录权限 | `775` |
 | `STRM_FILE_MODE` | STRM 文件权限 | `664` |
+| `QUARK_REQUEST_TIMEOUT_MS` | 夸克网盘接口单次请求超时（毫秒），网络较慢时可调大 | `30000` |
 | `SESSION_SECRET` | Session 密钥 | 自动生成并写入配置 |
 | `CORS_ORIGINS` | 允许跨域来源，多个用英文逗号分隔 | 空 |
 | `TYPEORM_SYNC` | 是否启用数据库结构同步 | 生产环境默认关闭 |

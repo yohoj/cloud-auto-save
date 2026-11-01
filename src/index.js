@@ -43,6 +43,18 @@ app.use(cors({
 app.use(express.json());
 
 const asyncHandler = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+// 账号容量仅是展示信息，超时不能拖住整个账号列表接口
+const ACCOUNT_CAPACITY_TIMEOUT_MS = 8000;
+const withTimeout = (promise, ms) => {
+    let timer;
+    const timeout = new Promise(resolve => {
+        timer = setTimeout(() => resolve(null), ms);
+    });
+    return Promise.race([
+        Promise.resolve(promise).catch(() => null),
+        timeout
+    ]).finally(() => clearTimeout(timer));
+};
 const cloud189QrLogins = new Map();
 const CLOUD189_QR_TTL_MS = 4 * 60 * 1000;
 const CLOUD189_QR_CONSUME_TTL_MS = 10 * 60 * 1000;
@@ -313,33 +325,38 @@ AppDataSource.initialize().then(async () => {
     // 账号相关API
     app.get('/api/accounts', asyncHandler(async (req, res) => {
         const accounts = await accountRepo.find();
-        // 获取容量
-        for (const account of accounts) {
-            account.cloudType = account.cloudType || (account.username.startsWith('q_') ? 'quark' : 'cloud189');
-            
+        // 并行获取容量：单个账号查询失败/超时不能影响账号列表返回
+        await Promise.all(accounts.map(async (account) => {
+            const username = String(account.username || '');
+            account.cloudType = account.cloudType || (username.startsWith('q_') ? 'quark' : 'cloud189');
+
             account.capacity = {
                 cloudCapacityInfo: null,
                 familyCapacityInfo: null
             }
             // n_ 开头的账号用于占位/通知，不参与网盘容量查询
-            if (!account.username.startsWith('n_')) {
-                const cloud189 = CloudUtils.getService(account);
-                const capacity = await cloud189.getUserSizeInfo()
-                if (capacity && capacity.res_code == 0) {
-                    if (capacity.cloudCapacityInfo) {
-                        account.capacity.cloudCapacityInfo = capacity.cloudCapacityInfo;
+            if (!username.startsWith('n_')) {
+                try {
+                    const cloud189 = CloudUtils.getService(account);
+                    const capacity = await withTimeout(cloud189.getUserSizeInfo(), ACCOUNT_CAPACITY_TIMEOUT_MS);
+                    if (capacity && capacity.res_code == 0) {
+                        if (capacity.cloudCapacityInfo) {
+                            account.capacity.cloudCapacityInfo = capacity.cloudCapacityInfo;
+                        }
+                        if (capacity.familyCapacityInfo) {
+                            account.capacity.familyCapacityInfo = capacity.familyCapacityInfo;
+                        }
                     }
-                    if (capacity.familyCapacityInfo) {
-                        account.capacity.familyCapacityInfo = capacity.familyCapacityInfo;
-                    }
+                } catch (error) {
+                    console.log(`获取账号容量信息失败: ${username}, ${error.message}`);
                 }
             }
-            account.original_username = account.username;
+            account.original_username = username;
             // username脱敏
-            account.username = account.username.replace(/(.{3}).*(.{4})/, '$1****$2');
+            account.username = username.replace(/(.{3}).*(.{4})/, '$1****$2');
             delete account.password;
             delete account.cookies;
-        }
+        }));
         res.json({ success: true, data: accounts });
     }));
 
@@ -500,7 +517,13 @@ AppDataSource.initialize().then(async () => {
                 const quark = CloudUtils.getService(account);
                 const folders = await quark.getFolderNodes('0');
                 if (!folders) {
-                    throw new Error('夸克 Cookie 验证失败');
+                    const lastError = quark.getLastRequestError?.();
+                    if (lastError && (lastError.type === 'timeout' || lastError.type === 'network')) {
+                        // 网络不通时无法校验 Cookie，先保存账号，避免因网络问题完全无法添加
+                        logTaskEvent(`夸克 Cookie 校验网络异常(${lastError.action || 'unknown'}): ${lastError.message}，已先保存账号`);
+                    } else {
+                        throw new Error('夸克 Cookie 验证失败');
+                    }
                 }
             }
             // 天翼账号尝试登录, 登录成功写入store, 如果需要验证码, 则返回用户验证码图片

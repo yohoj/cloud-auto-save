@@ -7,6 +7,12 @@ const { HttpProxyAgent } = require('http-proxy-agent');
 const BASE_URL = 'https://drive-pc.quark.cn';
 const DEFAULT_PARAMS = { pr: 'ucpro', fr: 'pc' };
 
+// 单次请求超时时间，可通过环境变量调整（默认 30 秒）
+const REQUEST_TIMEOUT_MS = (() => {
+    const parsed = parseInt(process.env.QUARK_REQUEST_TIMEOUT_MS, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 30000;
+})();
+
 class QuarkService {
     static instances = new Map();
 
@@ -39,9 +45,13 @@ class QuarkService {
         this.proxy = ProxyUtil.getProxy('quark');
         this._cookieSaveTimer = null;
         this._renewCookie = null;
+        // 最近一次请求失败的类型，供上层区分“网络异常”和“Cookie 失效”
+        this.lastRequestError = null;
         this.client = got.extend({
             prefixUrl: BASE_URL,
-            timeout: { request: 30000 },
+            timeout: { request: REQUEST_TIMEOUT_MS },
+            // 关闭 got 的隐式重试（默认会对 GET 重试 2 次，把 30 秒超时放大成 90 秒）
+            retry: { limit: 0 },
             headers: {
                 'Accept': 'application/json, text/plain, */*',
                 'Content-Type': 'application/json',
@@ -77,10 +87,35 @@ class QuarkService {
     }
 
     async request(action, options = {}) {
-        return this._requestWithRetry(action, options, true);
+        return this._requestWithRetry(action, options, true, 1);
     }
 
-    async _requestWithRetry(action, options, allowRenew) {
+    // 最近一次请求的失败信息，供上层区分网络异常与 Cookie/接口错误
+    getLastRequestError() {
+        return this.lastRequestError;
+    }
+
+    _isMethodRetryable(options) {
+        const method = String(options.method || 'GET').toUpperCase();
+        return method === 'GET' || method === 'HEAD';
+    }
+
+    _sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // 超时、连接失败等瞬时错误只对幂等请求重试一次，避免 POST 转存被重复提交
+    async _retryTransient(action, options, allowRenew, attempt, error) {
+        if (attempt >= 2 || !this._isMethodRetryable(options)) {
+            return null;
+        }
+        logTaskEvent(`夸克接口请求失败(${action}), 1 秒后重试: ${error.message}`);
+        await this._sleep(1000);
+        return this._requestWithRetry(action, options, allowRenew, attempt + 1);
+    }
+
+    async _requestWithRetry(action, options, allowRenew, attempt = 1) {
+        this.lastRequestError = null;
         try {
             const response = await this.client(action.replace(/^\//, ''), {
                 ...options,
@@ -93,10 +128,16 @@ class QuarkService {
                 logTaskEvent('夸克登录态可能已失效，正在自动续期...');
                 const renewed = await this._renewSession();
                 if (renewed) {
-                    return this._requestWithRetry(action, options, false);
+                    return this._requestWithRetry(action, options, false, 1);
                 }
             }
             if (response?.status && response.status !== 200) {
+                this.lastRequestError = {
+                    type: 'api',
+                    action,
+                    status: response.status,
+                    message: response.message || String(response.status)
+                };
                 logTaskEvent(`请求夸克网盘接口失败: ${response.message || response.status}`);
             }
             return response;
@@ -104,12 +145,18 @@ class QuarkService {
             if (error instanceof got.HTTPError) {
                 this._mergeSetCookie(error.response?.headers?.['set-cookie']);
                 const body = error.response?.body || '';
+                this.lastRequestError = {
+                    type: 'http',
+                    action,
+                    status: error.response?.statusCode,
+                    message: `HTTP ${error.response?.statusCode || 'unknown'} ${body.slice(0, 200)}`
+                };
                 logTaskEvent(`请求夸克网盘接口失败: HTTP ${error.response?.statusCode || 'unknown'} ${body.slice(0, 200)}`);
                 if (allowRenew && (error.response?.statusCode === 401 || error.response?.statusCode === 403) && this.cookie.includes('__puus')) {
                     logTaskEvent('夸克登录态可能已失效，正在自动续期...');
                     const renewed = await this._renewSession();
                     if (renewed) {
-                        return this._requestWithRetry(action, options, false);
+                        return this._requestWithRetry(action, options, false, 1);
                     }
                 }
                 try {
@@ -125,9 +172,13 @@ class QuarkService {
                     // 非 JSON 错误响应按原逻辑返回 null。
                 }
             } else if (error instanceof got.TimeoutError) {
-                logTaskEvent('请求夸克网盘接口失败: 请求超时, 请检查是否能访问夸克网盘');
+                this.lastRequestError = { type: 'timeout', action, message: error.message };
+                logTaskEvent(`请求夸克网盘接口失败: 请求超时(${action}), 请检查服务器是否能访问夸克网盘`);
+                return await this._retryTransient(action, options, allowRenew, attempt, error);
             } else {
-                logTaskEvent('请求夸克网盘接口异常: ' + error.message);
+                this.lastRequestError = { type: 'network', action, message: error.message };
+                logTaskEvent('请求夸克网盘接口异常(' + action + '): ' + error.message);
+                return await this._retryTransient(action, options, allowRenew, attempt, error);
             }
             return null;
         }
