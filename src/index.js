@@ -421,8 +421,16 @@ AppDataSource.initialize().then(async () => {
                 const tvSession = await requestCloud189Tv('/family/manage/loginFamilyMerge.action', 'GET', {
                     e189AccessToken: accessTokenResp.accessToken
                 });
+                // 扫码拿到的是 TV 开放平台令牌，PC 兑换不了，必须用 loginFamilyMerge 换 sessionKey。
+                // 这里校验 sessionKey，避免把不可用的令牌存下来、界面却提示“扫码成功”。
+                if (!tvSession?.sessionKey || !tvSession?.loginName) {
+                    throw new Error(tvSession?.res_message || tvSession?.message || '二维码登录未返回有效会话');
+                }
                 tokenSession = {
                     ...tvSession,
+                    // loginFamilyMerge 的入参必须是扫码拿到的 e189AccessToken；
+                    // 它返回的 accessToken 是会话刷新令牌，不能当 e189AccessToken 再次使用
+                    e189AccessToken: accessTokenResp.accessToken,
                     accessToken: tvSession.accessToken || accessTokenResp.accessToken,
                     refreshToken: tvSession.refreshToken || accessTokenResp.refreshToken || accessTokenResp.refresh_token || '',
                     loginName: tvSession.loginName
@@ -546,10 +554,11 @@ AppDataSource.initialize().then(async () => {
             }
             if (qrLogin) {
                 const tokenStore = new FileTokenStore(Cloud189Utils.getTokenFilePath(qrLogin.tokenSession.loginName || account.username));
-                const existingToken = await tokenStore.get();
                 await tokenStore.update({
-                    accessToken: qrLogin.tokenSession.accessToken,
-                    refreshToken: qrLogin.tokenSession.refreshToken || existingToken.refreshToken || '',
+                    // 优先保存扫码得到的 e189AccessToken（TV 会话的长期凭据），它才是 loginFamilyMerge 的入参
+                    accessToken: qrLogin.tokenSession.e189AccessToken || qrLogin.tokenSession.accessToken,
+                    // 不要复用旧 refreshToken：旧值可能属于已失效的令牌，留着会干扰后续会话判断与刷新
+                    refreshToken: qrLogin.tokenSession.refreshToken || '',
                     expiresIn: Date.now() + CLOUD189_TOKEN_TTL_MS
                 });
                 cloud189QrLogins.delete(qrLoginId);

@@ -52,7 +52,12 @@ function getCloud189TvSignatureHeaders(url, method) {
 }
 
 function shouldUseTvSessionFallback(account, token) {
-    return !account.password && !account.cookies && token?.accessToken && !token.refreshToken;
+    // 扫码登录（无密码、无 Cookie）拿到的是 TV 开放平台的 accessToken，只能通过
+    // loginFamilyMerge 换取 sessionKey；不能用 SDK 的 PC 流程（getSessionForPC，
+    // appId 8025431004）兑换，否则会返回 UserInvalidOpenToken。
+    // 不能用 refreshToken 是否存在来判定：扫码结果同样可能带 refreshToken，
+    // 一旦带上就会让 TV 会话被跳过，随后 PC 兑换失败 -> Can not get session.
+    return !account.password && !account.cookies && Boolean(token?.accessToken);
 }
 
 async function getCloud189TvSession(accessToken) {
@@ -136,23 +141,36 @@ class Cloud189Service {
         const originalGetSession = client.getSession.bind(client);
         client.getSession = async () => {
             const token = await tokenStore.get();
+            let tvError = null;
             if (shouldUseTvSessionFallback(account, token)) {
                 try {
                     const tvSession = await getCloud189TvSession(token.accessToken);
                     if (tvSession?.sessionKey) {
                         return {
                             ...tvSession,
+                            // 保留文件里的 e189AccessToken（loginFamilyMerge 的长期入参），
+                            // merge 返回的 accessToken 只是会话刷新令牌
                             accessToken: token.accessToken,
                             refreshToken: token.refreshToken || ''
                         };
                     }
+                    tvError = new Error(tvSession?.res_message || tvSession?.res_code || 'TV 会话为空');
                 } catch (error) {
-                    const sessionError = new Error('Can not get session.');
-                    sessionError.cause = error;
-                    throw sessionError;
+                    tvError = error;
                 }
             }
-            return await originalGetSession();
+            try {
+                return await originalGetSession();
+            } catch (error) {
+                if (tvError) {
+                    // 不影响错误类型（仍是 Can not get session.），只把 TV 兑换失败原因打到控制台便于排查
+                    const detail = tvError.response?.body
+                        ? String(tvError.response.body).slice(0, 300)
+                        : (tvError.message || tvError.res_code || String(tvError));
+                    console.log(`天翼云盘二维码会话获取失败: ${detail}`);
+                }
+                throw error;
+            }
         };
     }
 
@@ -606,4 +624,4 @@ class Cloud189Service {
     }
 }
 
-module.exports = { Cloud189Service };
+module.exports = { Cloud189Service, shouldUseTvSessionFallback };
