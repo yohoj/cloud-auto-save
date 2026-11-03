@@ -1,6 +1,7 @@
 const { CloudClient, FileTokenStore } = require('cloud189-sdk');
 const { logTaskEvent } = require('../utils/logUtils');
 const Cloud189Utils = require('../utils/Cloud189Utils');
+const ShareErrorUtils = require('../utils/ShareErrorUtils');
 const crypto = require('crypto');
 const got = require('got');
 const { rsaEncrypt } = require('cloud189-sdk/dist/util');
@@ -191,6 +192,11 @@ class Cloud189Service {
                     return null;
                 }
                 if (responseBody.res_code === "ShareAuditWaiting") {
+                    return responseBody;
+                }
+                // 分享已失效/被取消等错误需要把 res_code/res_msg 透出给上层，便于自动换链
+                if (ShareErrorUtils.isInvalidShareResponse(responseBody)) {
+                    logTaskEvent('分享已失效:' + rawBody);
                     return responseBody;
                 }
                 if (responseBody.res_code === "FileAlreadyExists") {

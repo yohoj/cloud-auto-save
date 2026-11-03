@@ -2,6 +2,7 @@ const { LessThan, In, IsNull } = require('typeorm');
 const CloudUtils = require('../utils/CloudUtils');
 const { MessageUtil } = require('./message');
 const { logTaskEvent } = require('../utils/logUtils');
+const ShareErrorUtils = require('../utils/ShareErrorUtils');
 const ConfigService = require('./ConfigService');
 const { CreateTaskDto } = require('../dto/TaskDto');
 const { BatchTaskDto } = require('../dto/BatchTaskDto');
@@ -42,6 +43,11 @@ class TaskService {
          if (!shareInfo) throw new Error('获取分享信息失败');
          if(shareInfo.res_code == "ShareAuditWaiting") {
             throw new Error('分享链接审核中, 请稍后再试');
+         }
+         // 分享已被取消/删除/过期时，抛出带标记的错误，便于上层自动换链
+         const invalidShareReason = ShareErrorUtils.getInvalidShareReason(shareInfo);
+         if (invalidShareReason) {
+            throw ShareErrorUtils.createInvalidShareError(invalidShareReason, shareInfo);
          }
          return shareInfo;
     }
@@ -564,7 +570,13 @@ class TaskService {
             await this._refreshQuarkShareToken(cloud189, task);
             dir = await cloud189.listShareDir(task.shareId, shareFolderId, task.shareMode, task.accessCode, true);
         }
-        if (!dir?.fileListAO) return [];
+        if (!dir?.fileListAO) {
+            const invalidShareReason = ShareErrorUtils.getInvalidShareReason(dir);
+            if (invalidShareReason) {
+                throw ShareErrorUtils.createInvalidShareError(invalidShareReason, dir);
+            }
+            return [];
+        }
 
         // 当前层级的文件，附加来源目录信息
         const files = (dir.fileListAO.fileList || []).map(file => ({
@@ -738,11 +750,17 @@ class TaskService {
                 await this._refreshQuarkShareToken(cloud189, task);
                 shareDir = await cloud189.listShareDir(task.shareId, task.shareFolderId, task.shareMode,task.accessCode, task.isFolder);
              }
-             if(shareDir.res_code == "ShareAuditWaiting") {
+             if(shareDir?.res_code == "ShareAuditWaiting") {
                 logTaskEvent("分享链接审核中, 等待下次执行")
                 return ''
              }
              if (!shareDir?.fileListAO?.fileList) {
+                // 分享失效(取消/删除/过期)时抛出带标记的错误，触发 CloudSaver 自动换链
+                const invalidShareReason = ShareErrorUtils.getInvalidShareReason(shareDir);
+                if (invalidShareReason) {
+                    logTaskEvent(`任务 ${task.id}: 分享已失效(${invalidShareReason})`);
+                    throw ShareErrorUtils.createInvalidShareError(invalidShareReason, shareDir);
+                }
                 logTaskEvent("获取文件列表失败: " + JSON.stringify(shareDir));
                 throw new Error('获取文件列表失败');
             }
@@ -1278,6 +1296,16 @@ class TaskService {
         }
         if (statusMessage) {
             logTaskEvent(`批量任务失败原因: ${statusMessage}`);
+            // 转存阶段才暴露分享失效时，同样抛出带标记的错误触发自动换链
+            const invalidShareReason = ShareErrorUtils.getInvalidShareReason({
+                res_msg: statusMessage,
+                message: statusMessage,
+                res_code: task.res_code,
+                code: task.code
+            });
+            if (invalidShareReason) {
+                throw ShareErrorUtils.createInvalidShareError(invalidShareReason, task);
+            }
         }
         return false;
     }
@@ -1354,9 +1382,8 @@ class TaskService {
         return [matchResult, matchValue];
     }
 
-    _isNonRetryableTaskError(error) {
-        const message = error?.message || String(error || '');
-        return message.includes('好友已取消了分享');
+    _isInvalidShareError(error) {
+        return ShareErrorUtils.isInvalidShareError(error);
     }
 
     // 归一化分享链接，用于判断搜索结果中哪一条是当前任务正在使用的链接
@@ -1392,22 +1419,22 @@ class TaskService {
         return this._normalizeShareLink(text);
     }
 
-    // 通过 CloudSaver 搜索任务名，按搜索结果顺序返回下一个同网盘分享链接
-    async _searchReplacementShareLink(task, cloudType) {
+    // 通过 CloudSaver 搜索任务名，按搜索结果顺序返回当前链接之后的同网盘分享链接
+    async _searchReplacementShareLinks(task, cloudType) {
         if (!cloudType || !this.cloudSaverSDK?.enabled) {
-            return '';
+            return [];
         }
         const keyword = String(task.resourceName || '').trim();
         if (!keyword) {
-            return '';
+            return [];
         }
-        logTaskEvent(`任务 ${task.id}: 分享已取消，尝试使用 CloudSaver 搜索[${keyword}]`);
+        logTaskEvent(`任务 ${task.id}: 分享已失效，尝试使用 CloudSaver 搜索[${keyword}]`);
         const results = await this.cloudSaverSDK.search(keyword);
         const sameCloudLinks = (results || [])
             .filter(item => item.cloudType === cloudType && item?.cloudLinks?.[0]?.link)
             .map(item => item.cloudLinks[0].link);
         if (sameCloudLinks.length === 0) {
-            return '';
+            return [];
         }
 
         // 已替换过的任务从当前链接之后继续尝试，避免重复使用同一个链接
@@ -1415,10 +1442,9 @@ class TaskService {
         const currentIndex = sameCloudLinks.findIndex(
             link => this._getShareLinkIdentity(link, cloudType) === currentIdentity
         );
-        const candidates = currentIndex >= 0
+        return currentIndex >= 0
             ? sameCloudLinks.slice(currentIndex + 1)
             : sameCloudLinks.filter(link => this._getShareLinkIdentity(link, cloudType) !== currentIdentity);
-        return candidates[0] || '';
     }
 
     // 计算替换链接后的源目录: 不保存子目录时优先使用根目录下唯一的子目录
@@ -1497,18 +1523,25 @@ class TaskService {
         return url;
     }
 
-    // 分享被取消时自动替换为 CloudSaver 搜索到的同网盘链接
-    async _tryReplaceCancelledShare(task) {
+    // 分享失效时自动替换为 CloudSaver 搜索到的同网盘链接，逐个尝试直到有一个可用
+    async _tryReplaceInvalidShare(task) {
         try {
             const cloudType = task.shareLink ? this.cloudUtils.getShareLinkCloudType(task.shareLink) : '';
-            const shareLink = await this._searchReplacementShareLink(task, cloudType);
-            if (!shareLink) {
+            const shareLinks = await this._searchReplacementShareLinks(task, cloudType);
+            if (!shareLinks.length) {
                 logTaskEvent(`任务 ${task.id}: 未搜索到可替换的同网盘分享链接`);
                 return '';
             }
-            const appliedLink = await this._applyReplacementShareLink(task, shareLink);
-            logTaskEvent(`任务 ${task.id}: 已自动替换分享链接为 ${appliedLink}`);
-            return appliedLink;
+            for (const shareLink of shareLinks) {
+                try {
+                    const appliedLink = await this._applyReplacementShareLink(task, shareLink);
+                    logTaskEvent(`任务 ${task.id}: 已自动替换分享链接为 ${appliedLink}`);
+                    return appliedLink;
+                } catch (applyError) {
+                    logTaskEvent(`任务 ${task.id}: 候选分享链接不可用(${applyError.message})，尝试下一个`);
+                }
+            }
+            return '';
         } catch (replaceError) {
             logTaskEvent(`任务 ${task.id}: 自动替换分享链接失败: ${replaceError.message}`);
             return '';
@@ -1526,15 +1559,15 @@ class TaskService {
             task.retryCount = 0;
         }
 
-        if (this._isNonRetryableTaskError(error)) {
-            const replacementLink = await this._tryReplaceCancelledShare(task);
+        if (this._isInvalidShareError(error)) {
+            const replacementLink = await this._tryReplaceInvalidShare(task);
             if (replacementLink) {
                 task.status = 'processing';
                 task.retryCount = 0;
                 task.nextRetryTime = null;
                 task.lastError = `${error.message} (已自动替换分享链接，正在重试)`;
                 logTaskEvent(`任务 ${task.id}: 已自动替换分享链接，立即执行任务`);
-                this.messageUtil.sendMessage(`♻️ 任务[${resourceName}]的分享已被取消，已自动替换为新的同网盘链接并立即重试\n新链接: ${replacementLink}`);
+                this.messageUtil.sendMessage(`♻️ 任务[${resourceName}]的分享已失效，已自动替换为新的同网盘链接并立即重试\n失败原因: ${error.message}\n新链接: ${replacementLink}`);
                 await this.taskRepo.save(task);
                 // 不再依赖内置重试任务，替换后直接执行
                 return await this.processTask(task);
@@ -1542,8 +1575,8 @@ class TaskService {
             task.status = 'failed';
             task.nextRetryTime = null;
             task.lastError = `${error.message} (不再重试)`;
-            logTaskEvent('任务失败原因不可重试，标记为失败');
-            this.messageUtil.sendMessage(`❌ 任务[${resourceName}]转存失败\n失败原因: ${error.message}\n分享已取消，不再重试`);
+            logTaskEvent('分享已失效且没有可替换的链接，标记为失败');
+            this.messageUtil.sendMessage(`❌ 任务[${resourceName}]转存失败\n失败原因: ${error.message}\n分享已失效且未搜索到可替换链接，不再重试`);
             await this.taskRepo.save(task);
             return '';
         }

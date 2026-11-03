@@ -390,7 +390,7 @@ class QuarkService {
                 _sort: 'file_type:asc,updated_at:desc'
             }
         });
-        if (!response || response.status !== 200) {
+        if (!response || response.status !== 200 || (response.code !== undefined && response.code !== 0)) {
             return response ? {
                 res_code: response.code || response.status,
                 res_msg: response.message,
