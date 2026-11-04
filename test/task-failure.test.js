@@ -765,3 +765,204 @@ test('夸克分享地址失效(41011)时自动换链并立即重试', async () =
     assert.match(sentMessages[0], /分享地址已失效/);
     assert.match(sentMessages[0], /newcode/);
 });
+
+function stubSearchCloudUtils(validCodes, contents = {}, attempted = null) {
+    return {
+        getShareLinkCloudType: () => 'cloud189',
+        isQuarkAccount: () => false,
+        parseCloudShare: link => ({ url: link, accessCode: '' }),
+        parseShareCode: link => link.split('/').pop(),
+        getService: () => ({
+            async getShareInfo(shareCode) {
+                if (attempted) attempted.push(shareCode);
+                if (validCodes.includes(shareCode)) {
+                    return { res_code: 0, shareId: shareCode, fileId: `${shareCode}-root`, shareMode: 0, isFolder: true };
+                }
+                return { res_code: 'ShareNotFound', res_msg: '分享不存在' };
+            },
+            async listShareDir(shareId, folderId) {
+                const tree = contents[shareId] || {};
+                return tree[folderId] || { fileListAO: { fileList: [], folderList: [] } };
+            }
+        })
+    };
+}
+
+test('换链从搜索结果头部开始，不跳过比当前链接更新的候选', async () => {
+    const { service } = createTaskService();
+    const attempted = [];
+    service.processTask = async () => 'done';
+    service.cloudSaverSDK = {
+        enabled: true,
+        async search() {
+            return [
+                { title: '名称：测试资源 4K 更新至10集', cloudType: 'cloud189', cloudLinks: [{ link: 'https://cloud.189.cn/t/NEWCODE' }] },
+                { title: '名称：测试资源 4K 更新至9集', cloudType: 'cloud189', cloudLinks: [{ link: 'https://cloud.189.cn/t/SECOND' }] },
+                { title: '名称：测试资源 4K 更新至8集', cloudType: 'cloud189', cloudLinks: [{ link: 'https://cloud.189.cn/t/THIRD' }] }
+            ];
+        }
+    };
+    service.cloudUtils = stubSearchCloudUtils(['NEWCODE', 'SECOND', 'THIRD'], {}, attempted);
+    const task = {
+        id: 15,
+        accountId: 1,
+        resourceName: '测试资源',
+        shareLink: 'https://cloud.189.cn/t/SECOND',
+        status: 'processing',
+        retryCount: 0,
+        nextRetryTime: null,
+        account: { cloudType: 'cloud189' }
+    };
+
+    await service._handleTaskFailure(task, new Error('分享不存在'));
+
+    assert.equal(task.status, 'processing');
+    assert.equal(task.shareLink, 'https://cloud.189.cn/t/NEWCODE');
+    assert.deepEqual(attempted, ['NEWCODE']);
+});
+
+test('标题与资源名无关的同网盘结果不会被用于替换', async () => {
+    const { service } = createTaskService();
+    const attempted = [];
+    service.processTask = async () => 'done';
+    service.cloudSaverSDK = {
+        enabled: true,
+        async search() {
+            return [
+                { title: '名称：2026年10月20日 短剧更新目录4', cloudType: 'cloud189', cloudLinks: [{ link: 'https://cloud.189.cn/t/JUNK' }] },
+                { title: '名称：弹指遮天（80集）林琦婷', cloudType: 'cloud189', cloudLinks: [{ link: 'https://cloud.189.cn/t/OTHER' }] },
+                { title: '名称：遮天 4K 更新至188集', cloudType: 'cloud189', cloudLinks: [{ link: 'https://cloud.189.cn/t/GOOD' }] }
+            ];
+        }
+    };
+    service.cloudUtils = stubSearchCloudUtils(['JUNK', 'OTHER', 'GOOD'], {}, attempted);
+    const task = {
+        id: 16,
+        accountId: 1,
+        resourceName: '遮天',
+        shareLink: 'https://cloud.189.cn/t/OLDCODE',
+        status: 'processing',
+        retryCount: 0,
+        nextRetryTime: null,
+        account: { cloudType: 'cloud189' }
+    };
+
+    await service._handleTaskFailure(task, new Error('分享地址已失效'));
+
+    assert.equal(task.status, 'processing');
+    assert.equal(task.shareLink, 'https://cloud.189.cn/t/GOOD');
+    assert.deepEqual(attempted, ['GOOD']);
+});
+
+test('只有无关结果时不替换，任务直接失败且保留原链接', async () => {
+    const { service, savedTasks, sentMessages } = createTaskService();
+    service.cloudSaverSDK = {
+        enabled: true,
+        async search() {
+            return [
+                { title: '名称：2026年10月20日 短剧更新目录4', cloudType: 'cloud189', cloudLinks: [{ link: 'https://cloud.189.cn/t/JUNK' }] }
+            ];
+        }
+    };
+    service.cloudUtils = stubSearchCloudUtils(['JUNK']);
+    const task = {
+        id: 17,
+        accountId: 1,
+        resourceName: '遮天',
+        shareLink: 'https://cloud.189.cn/t/OLDCODE',
+        status: 'processing',
+        retryCount: 0,
+        nextRetryTime: null,
+        account: { cloudType: 'cloud189' }
+    };
+
+    await service._handleTaskFailure(task, new Error('分享地址已失效'));
+
+    assert.equal(task.status, 'failed');
+    assert.equal(task.shareLink, 'https://cloud.189.cn/t/OLDCODE');
+    assert.equal(savedTasks.length, 1);
+    assert.match(sentMessages[0], /不再重试/);
+});
+
+test('分享内容与任务匹配规则不符时跳过该候选', async () => {
+    const { service } = createTaskService();
+    const attempted = [];
+    service.processTask = async () => 'done';
+    service.cloudSaverSDK = {
+        enabled: true,
+        async search() {
+            return [
+                { title: '名称：遮天 短剧合集', cloudType: 'cloud189', cloudLinks: [{ link: 'https://cloud.189.cn/t/JUNK' }] },
+                { title: '名称：遮天 4K 更新至188集', cloudType: 'cloud189', cloudLinks: [{ link: 'https://cloud.189.cn/t/GOOD' }] }
+            ];
+        }
+    };
+    service.cloudUtils = stubSearchCloudUtils(['JUNK', 'GOOD'], {
+            JUNK: {
+                'JUNK-root': { fileListAO: { fileList: [], folderList: [{ id: 'junk-4', name: '4' }] } },
+                'junk-4': { fileListAO: { fileList: [], folderList: [{ id: 'junk-d1', name: '月薪两万' }, { id: 'junk-d2', name: '夫人一个过肩摔' }] } },
+                'junk-d1': { fileListAO: { fileList: [{ id: 'junk-f1', name: '39.mp4' }], folderList: [] } },
+                'junk-d2': { fileListAO: { fileList: [{ id: 'junk-f2', name: '20.mp4' }], folderList: [] } }
+            },
+            GOOD: {
+                'GOOD-root': { fileListAO: { fileList: [], folderList: [{ id: 'good-sub', name: 'Z嗻tian' }] } },
+                'good-sub': { fileListAO: { fileList: [{ id: 'good-f1', name: 'S01E188.4K.mp4' }], folderList: [] } }
+            }
+        }, attempted);
+    const task = {
+        id: 18,
+        accountId: 1,
+        resourceName: '遮天',
+        shareLink: 'https://cloud.189.cn/t/OLDCODE',
+        matchPattern: 'S01E\\d+',
+        matchOperator: 'contains',
+        matchValue: 'S01E',
+        status: 'processing',
+        retryCount: 0,
+        nextRetryTime: null,
+        account: { cloudType: 'cloud189' }
+    };
+
+    await service._handleTaskFailure(task, new Error('分享地址已失效'));
+
+    assert.equal(task.status, 'processing');
+    assert.equal(task.shareLink, 'https://cloud.189.cn/t/GOOD');
+    assert.deepEqual(attempted, ['JUNK', 'GOOD']);
+});
+
+test('所有候选内容都不匹配时任务失败且不写入新链接', async () => {
+    const { service, sentMessages } = createTaskService();
+    service.cloudSaverSDK = {
+        enabled: true,
+        async search() {
+            return [
+                { title: '名称：遮天 短剧合集', cloudType: 'cloud189', cloudLinks: [{ link: 'https://cloud.189.cn/t/JUNK' }] }
+            ];
+        }
+    };
+    service.cloudUtils = stubSearchCloudUtils(['JUNK'], {
+        JUNK: {
+            'JUNK-root': { fileListAO: { fileList: [], folderList: [{ id: 'junk-4', name: '4' }] } },
+            'junk-4': { fileListAO: { fileList: [{ id: 'junk-f1', name: '39.mp4' }], folderList: [] } }
+        }
+    });
+    const task = {
+        id: 19,
+        accountId: 1,
+        resourceName: '遮天',
+        shareLink: 'https://cloud.189.cn/t/OLDCODE',
+        matchPattern: 'S01E\\d+',
+        matchOperator: 'contains',
+        matchValue: 'S01E',
+        status: 'processing',
+        retryCount: 0,
+        nextRetryTime: null,
+        account: { cloudType: 'cloud189' }
+    };
+
+    await service._handleTaskFailure(task, new Error('分享地址已失效'));
+
+    assert.equal(task.status, 'failed');
+    assert.equal(task.shareLink, 'https://cloud.189.cn/t/OLDCODE');
+    assert.match(sentMessages[0], /不再重试/);
+});

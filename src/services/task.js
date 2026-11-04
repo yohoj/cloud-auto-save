@@ -883,6 +883,8 @@ class TaskService {
             }
 
             task.lastCheckTime = new Date();
+            // 换链后成功执行，清空本轮已尝试的链接记录
+            delete task._replacementTriedShareLinks;
             await this.taskRepo.save(task);
             return saveResults.join('\n');
         } catch (error) {
@@ -1419,7 +1421,32 @@ class TaskService {
         return this._normalizeShareLink(text);
     }
 
-    // 通过 CloudSaver 搜索任务名，按搜索结果顺序返回当前链接之后的同网盘分享链接
+    // 资源名归一化：去掉「名称：」前缀、括号内容、第几季/集、年份、空白与标点，便于和搜索结果标题比对
+    _normalizeResourceName(name) {
+        return String(name || '')
+            .replace(/^\s*名称\s*[:：]\s*/, '')
+            .replace(/[（(\[【][^）)\]】]*[）)\]】]/g, ' ')
+            .replace(/第\s*[0-9一二三四五六七八九十百零两]+\s*[季部集期话]/g, ' ')
+            .replace(/(19|20)\d{2}\s*年?/g, ' ')
+            .replace(/[\s\u3000.,:：;；!！?？'"“”‘’、·\-_—|/\\]+/g, '')
+            .toLowerCase();
+    }
+
+    // 搜索结果标题与资源名的相关度：2=标题以资源名开头, 1=标题包含资源名, 0=无关
+    _replacementTitleScore(title, resourceName) {
+        const name = this._normalizeResourceName(resourceName);
+        const normalizedTitle = this._normalizeResourceName(title);
+        if (!name || !normalizedTitle) {
+            return 0;
+        }
+        if (normalizedTitle.startsWith(name)) {
+            return 2;
+        }
+        return normalizedTitle.includes(name) ? 1 : 0;
+    }
+
+    // 通过 CloudSaver 搜索任务名，按搜索结果顺序（新→旧）返回同网盘分享链接
+    // 不再从“当前链接之后”开始：任务当前链接往往已经沉在列表中间，从中间续跑会跳过最新、最可能有效的候选
     async _searchReplacementShareLinks(task, cloudType) {
         if (!cloudType || !this.cloudSaverSDK?.enabled) {
             return [];
@@ -1430,21 +1457,47 @@ class TaskService {
         }
         logTaskEvent(`任务 ${task.id}: 分享已失效，尝试使用 CloudSaver 搜索[${keyword}]`);
         const results = await this.cloudSaverSDK.search(keyword);
-        const sameCloudLinks = (results || [])
-            .filter(item => item.cloudType === cloudType && item?.cloudLinks?.[0]?.link)
-            .map(item => item.cloudLinks[0].link);
-        if (sameCloudLinks.length === 0) {
+        const currentIdentity = this._getShareLinkIdentity(task.shareLink, cloudType);
+        // 本轮换链已经尝试过的链接，避免在两条链接之间来回替换
+        const triedIdentities = Array.isArray(task._replacementTriedShareLinks)
+            ? task._replacementTriedShareLinks
+            : [];
+        const seen = new Set();
+        const candidates = [];
+        for (const item of results || []) {
+            const link = item?.cloudLinks?.[0]?.link;
+            if (!link || item.cloudType !== cloudType) {
+                continue;
+            }
+            const identity = this._getShareLinkIdentity(link, cloudType);
+            // 跳过任务当前正在使用的链接，其余候选一律从列表头部重新开始
+            if (!identity || identity === currentIdentity || seen.has(identity) || triedIdentities.includes(identity)) {
+                continue;
+            }
+            seen.add(identity);
+            const title = String(item.title || '').trim();
+            candidates.push({
+                link,
+                title,
+                // 没有标题时无法判断相关性，视为中性候选
+                score: title ? this._replacementTitleScore(title, keyword) : 1
+            });
+        }
+        if (candidates.length === 0) {
             return [];
         }
 
-        // 已替换过的任务从当前链接之后继续尝试，避免重复使用同一个链接
-        const currentIdentity = this._getShareLinkIdentity(task.shareLink, cloudType);
-        const currentIndex = sameCloudLinks.findIndex(
-            link => this._getShareLinkIdentity(link, cloudType) === currentIdentity
-        );
-        return currentIndex >= 0
-            ? sameCloudLinks.slice(currentIndex + 1)
-            : sameCloudLinks.filter(link => this._getShareLinkIdentity(link, cloudType) !== currentIdentity);
+        // 只保留标题与资源名相关的结果，排除「短剧更新目录」这类同网盘但无关的分享
+        const matched = candidates.filter(candidate => candidate.score > 0);
+        const skipped = candidates.length - matched.length;
+        if (skipped > 0) {
+            logTaskEvent(`任务 ${task.id}: 已排除 ${skipped} 个与[${keyword}]无关的同网盘搜索结果`);
+        }
+        if (matched.length === 0) {
+            return [];
+        }
+        // 稳定排序：标题以资源名开头的优先，其余保持搜索结果原有顺序
+        return matched.sort((a, b) => b.score - a.score);
     }
 
     // 计算替换链接后的源目录: 不保存子目录时优先使用根目录下唯一的子目录
@@ -1477,7 +1530,7 @@ class TaskService {
     }
 
     // 解析并应用替换后的分享链接，刷新任务缓存中的分享信息
-    async _applyReplacementShareLink(task, shareLink) {
+    async _applyReplacementShareLink(task, shareLink, searchTitle = '') {
         const account = task.account
             || (this.accountRepo ? await this.accountRepo.findOneBy({ id: task.accountId }) : null);
         if (!account) {
@@ -1512,6 +1565,12 @@ class TaskService {
             throw new Error('获取分享信息失败');
         }
 
+        // 校验分享内容，避免把任务换到同网盘但毫不相干的资源上（例如各种「短剧更新目录」）
+        const contentCheck = await this._verifyReplacementShareContent(cloud, task, shareInfo, accessCode, searchTitle);
+        if (!contentCheck.ok) {
+            throw new Error(contentCheck.reason);
+        }
+
         const { folderId, folderName } = await this._resolveReplacementShareFolder(cloud, task, shareInfo, accessCode);
         task.shareLink = url;
         task.accessCode = accessCode;
@@ -1523,24 +1582,124 @@ class TaskService {
         return url;
     }
 
+    // 换链前校验分享内容：按任务的匹配规则确认分享里确实有对应剧集文件
+    // 没有匹配规则（或读不到目录）时无法判断，放行并记录日志，保持原有行为
+    async _verifyReplacementShareContent(cloud, task, shareInfo, accessCode, searchTitle = '') {
+        if (!task.matchPattern || !task.matchValue) {
+            return { ok: true };
+        }
+        let scan;
+        try {
+            scan = await this._scanReplacementShareFiles(
+                cloud,
+                shareInfo,
+                accessCode,
+                fileName => this._handleMatchMode(task, { name: fileName })
+            );
+        } catch (error) {
+            logTaskEvent(`任务 ${task.id}: 读取候选分享内容失败(${error.message})，跳过内容校验`);
+            return { ok: true };
+        }
+        if (scan.matchedFile) {
+            return { ok: true };
+        }
+        if (!scan.scanned) {
+            logTaskEvent(`任务 ${task.id}: 未能读取候选分享内容，跳过内容校验`);
+            return { ok: true };
+        }
+        return {
+            ok: false,
+            reason: `分享内容与任务匹配规则不符(搜索结果: ${searchTitle || '无标题'}, 已扫描 ${scan.fileNames.length} 个文件)`
+        };
+    }
+
+    // 浅层扫描候选分享（默认最多 2 层、6 个目录），命中匹配规则后立即停止
+    async _scanReplacementShareFiles(cloud, shareInfo, accessCode, matcher, options = {}) {
+        const maxFolders = options.maxFolders || 6;
+        const maxDepth = options.maxDepth === undefined ? 2 : options.maxDepth;
+        const fileNames = [];
+        let matchedFile = '';
+        if (shareInfo.isFolder === false) {
+            const fileName = shareInfo.fileName || '';
+            if (fileName) {
+                fileNames.push(fileName);
+                if (matcher(fileName)) {
+                    matchedFile = fileName;
+                }
+            }
+            return { scanned: fileNames.length > 0, matchedFile, fileNames };
+        }
+
+        if (!shareInfo.fileId) {
+            return { scanned: false, matchedFile, fileNames };
+        }
+        const queue = [{ folderId: shareInfo.fileId, depth: 0 }];
+        let listedFolders = 0;
+        while (queue.length > 0 && listedFolders < maxFolders && !matchedFile) {
+            const { folderId, depth } = queue.shift();
+            const dir = await cloud.listShareDir(
+                shareInfo.shareId,
+                folderId,
+                shareInfo.shareMode,
+                accessCode,
+                true
+            );
+            if (!dir?.fileListAO) {
+                continue;
+            }
+            listedFolders++;
+            for (const file of dir.fileListAO.fileList || []) {
+                const fileName = this._getShareFolderName(file);
+                if (!fileName) {
+                    continue;
+                }
+                fileNames.push(fileName);
+                if (matcher(fileName)) {
+                    matchedFile = fileName;
+                    break;
+                }
+            }
+            if (matchedFile || depth + 1 >= maxDepth) {
+                continue;
+            }
+            for (const folder of dir.fileListAO.folderList || []) {
+                const childId = this._getShareFolderId(folder);
+                if (childId) {
+                    queue.push({ folderId: childId, depth: depth + 1 });
+                }
+            }
+        }
+        return { scanned: listedFolders > 0, matchedFile, fileNames };
+    }
+
     // 分享失效时自动替换为 CloudSaver 搜索到的同网盘链接，逐个尝试直到有一个可用
     async _tryReplaceInvalidShare(task) {
         try {
             const cloudType = task.shareLink ? this.cloudUtils.getShareLinkCloudType(task.shareLink) : '';
-            const shareLinks = await this._searchReplacementShareLinks(task, cloudType);
-            if (!shareLinks.length) {
+            const candidates = await this._searchReplacementShareLinks(task, cloudType);
+            if (!candidates.length) {
                 logTaskEvent(`任务 ${task.id}: 未搜索到可替换的同网盘分享链接`);
                 return '';
             }
-            for (const shareLink of shareLinks) {
+            logTaskEvent(`任务 ${task.id}: 开始逐条校验 ${candidates.length} 个候选分享链接`);
+            for (const candidate of candidates) {
                 try {
-                    const appliedLink = await this._applyReplacementShareLink(task, shareLink);
-                    logTaskEvent(`任务 ${task.id}: 已自动替换分享链接为 ${appliedLink}`);
+                    const appliedLink = await this._applyReplacementShareLink(task, candidate.link, candidate.title);
+                    const appliedIdentity = this._getShareLinkIdentity(appliedLink, cloudType);
+                    if (appliedIdentity) {
+                        task._replacementTriedShareLinks = [
+                            ...(task._replacementTriedShareLinks || []),
+                            appliedIdentity
+                        ].slice(-20);
+                    }
+                    const titleText = candidate.title ? `（${candidate.title}）` : '';
+                    logTaskEvent(`任务 ${task.id}: 已自动替换分享链接为 ${appliedLink}${titleText}`);
                     return appliedLink;
                 } catch (applyError) {
                     logTaskEvent(`任务 ${task.id}: 候选分享链接不可用(${applyError.message})，尝试下一个`);
                 }
             }
+            logTaskEvent(`任务 ${task.id}: ${candidates.length} 个候选分享链接均不可用`);
             return '';
         } catch (replaceError) {
             logTaskEvent(`任务 ${task.id}: 自动替换分享链接失败: ${replaceError.message}`);
