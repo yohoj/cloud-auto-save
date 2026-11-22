@@ -81,7 +81,8 @@ class TaskService {
             targetRegex: taskDto.targetRegex,
             enableTaskScraper: taskDto.enableTaskScraper,
             isFolder: taskDto.isFolder,
-            saveSubDir: taskDto.saveSubDir !== false // 默认为 true
+            saveSubDir: taskDto.saveSubDir !== false, // 默认为 true
+            replaceShareWhenNoUpdate: taskDto.replaceShareWhenNoUpdate === true // 默认为 false
         };
     }
 
@@ -736,6 +737,8 @@ class TaskService {
     async processTask(task) {
         let saveResults = [];
         try {
+            // 本轮是否真正转存了文件（换链逻辑据此判断新链接是否有增量）
+            task._lastTransferFileCount = 0;
             const account = await this.accountRepo.findOneBy({ id: task.accountId });
             if (!account) {
                 logTaskEvent(`账号不存在，accountId: ${task.accountId}`);
@@ -849,6 +852,9 @@ class TaskService {
                 task.lastFileUpdateTime = new Date();
                 task.currentEpisodes = existingMediaCount + fileCount;
                 task.retryCount = 0;
+                task._lastTransferFileCount = newFiles.length;
+                // 换链后成功追更，清空本轮已尝试的链接记录
+                delete task._replacementTriedShareLinks;
                 process.nextTick(() => {
                     this.eventService.emit('taskComplete', new TaskCompleteEventDto({
                         task,
@@ -859,6 +865,13 @@ class TaskService {
                     }));
                 })
             } else if (task.lastFileUpdateTime) {
+                // 勾选了「无增量时换链」的任务：没有增量剧集时重新搜索并尝试更换分享链接
+                if (task.replaceShareWhenNoUpdate === true && !task._noUpdateReplacementInProgress) {
+                    const replacement = await this._tryReplaceShareWhenNoUpdate(task);
+                    if (replacement.replaced) {
+                        return replacement.result;
+                    }
+                }
                 // 检查是否超过3天没有新文件
                 const now = new Date();
                 const lastUpdate = new Date(task.lastFileUpdateTime);
@@ -883,8 +896,6 @@ class TaskService {
             }
 
             task.lastCheckTime = new Date();
-            // 换链后成功执行，清空本轮已尝试的链接记录
-            delete task._replacementTriedShareLinks;
             await this.taskRepo.save(task);
             return saveResults.join('\n');
         } catch (error) {
@@ -967,7 +978,7 @@ class TaskService {
             await this._applyShareLinkUpdate(task, updates);
         }
         // 只允许更新特定字段
-        const allowedFields = ['resourceName', 'realFolderId', 'currentEpisodes', 'totalEpisodes', 'status','realFolderName', 'shareFolderName', 'shareFolderId', 'matchPattern','matchOperator','matchValue','remark', 'enableCron', 'cronExpression', 'enableTaskScraper', 'saveSubDir'];
+        const allowedFields = ['resourceName', 'realFolderId', 'currentEpisodes', 'totalEpisodes', 'status','realFolderName', 'shareFolderName', 'shareFolderId', 'matchPattern','matchOperator','matchValue','remark', 'enableCron', 'cronExpression', 'enableTaskScraper', 'saveSubDir', 'replaceShareWhenNoUpdate'];
         for (const field of allowedFields) {
             if (updates[field] !== undefined) {
                 task[field] = updates[field];
@@ -1447,7 +1458,7 @@ class TaskService {
 
     // 通过 CloudSaver 搜索任务名，按搜索结果顺序（新→旧）返回同网盘分享链接
     // 不再从“当前链接之后”开始：任务当前链接往往已经沉在列表中间，从中间续跑会跳过最新、最可能有效的候选
-    async _searchReplacementShareLinks(task, cloudType) {
+    async _searchReplacementShareLinks(task, cloudType, reasonText = '分享已失效') {
         if (!cloudType || !this.cloudSaverSDK?.enabled) {
             return [];
         }
@@ -1455,7 +1466,7 @@ class TaskService {
         if (!keyword) {
             return [];
         }
-        logTaskEvent(`任务 ${task.id}: 分享已失效，尝试使用 CloudSaver 搜索[${keyword}]`);
+        logTaskEvent(`任务 ${task.id}: ${reasonText}，尝试使用 CloudSaver 搜索[${keyword}]`);
         const results = await this.cloudSaverSDK.search(keyword);
         const currentIdentity = this._getShareLinkIdentity(task.shareLink, cloudType);
         // 本轮换链已经尝试过的链接，避免在两条链接之间来回替换
@@ -1705,6 +1716,66 @@ class TaskService {
             logTaskEvent(`任务 ${task.id}: 自动替换分享链接失败: ${replaceError.message}`);
             return '';
         }
+    }
+
+    // 没有增量剧集时按需重新搜索并换链：只有换到能追更的链接才保留，否则恢复原链接
+    async _tryReplaceShareWhenNoUpdate(task) {
+        if (!this.cloudSaverSDK?.enabled) {
+            logTaskEvent(`任务 ${task.id}: 没有增量剧集，CloudSaver 未启用，跳过换链`);
+            return { replaced: false };
+        }
+        const cloudType = task.shareLink ? this.cloudUtils.getShareLinkCloudType(task.shareLink) : '';
+        const candidates = await this._searchReplacementShareLinks(task, cloudType, '没有增量剧集');
+        if (!candidates.length) {
+            logTaskEvent(`任务 ${task.id}: 没有增量剧集，未搜索到可替换的同网盘分享链接`);
+            return { replaced: false };
+        }
+        // 备份原分享信息，候选链接都没有增量时恢复，避免任务在多个链接之间来回切换
+        const original = {
+            shareLink: task.shareLink,
+            accessCode: task.accessCode,
+            shareId: task.shareId,
+            shareFileId: task.shareFileId,
+            shareMode: task.shareMode,
+            shareFolderId: task.shareFolderId,
+            shareFolderName: task.shareFolderName,
+            status: task.status
+        };
+        // 每次最多尝试 3 个候选，避免一次执行里反复列目录、转存
+        const maxAttempts = Math.min(candidates.length, 3);
+        logTaskEvent(`任务 ${task.id}: 没有增量剧集，开始尝试 ${maxAttempts} 个候选分享链接`);
+        task._noUpdateReplacementInProgress = true;
+        try {
+            for (const candidate of candidates.slice(0, maxAttempts)) {
+                const titleText = candidate.title ? `（${candidate.title}）` : '';
+                try {
+                    const appliedLink = await this._applyReplacementShareLink(task, candidate.link, candidate.title);
+                    const appliedIdentity = this._getShareLinkIdentity(appliedLink, cloudType);
+                    if (appliedIdentity) {
+                        task._replacementTriedShareLinks = [
+                            ...(task._replacementTriedShareLinks || []),
+                            appliedIdentity
+                        ].slice(-20);
+                    }
+                    logTaskEvent(`任务 ${task.id}: 已切换到候选分享链接 ${appliedLink}${titleText}，重新检查增量`);
+                    task._lastTransferFileCount = 0;
+                    const result = await this.processTask(task);
+                    if ((task._lastTransferFileCount || 0) > 0) {
+                        logTaskEvent(`任务 ${task.id}: 候选分享链接${titleText}有增量剧集，保留新链接`);
+                        return { replaced: true, result };
+                    }
+                    logTaskEvent(`任务 ${task.id}: 候选分享链接${titleText}同样没有增量剧集`);
+                } catch (applyError) {
+                    logTaskEvent(`任务 ${task.id}: 候选分享链接不可用(${applyError.message})，尝试下一个`);
+                }
+                Object.assign(task, original);
+            }
+        } finally {
+            delete task._noUpdateReplacementInProgress;
+        }
+        await this.taskRepo.save(task);
+        logTaskEvent(`任务 ${task.id}: 重新搜索后仍未找到有增量剧集的分享链接，保持原链接`);
+        return { replaced: false };
     }
 
     // 任务失败处理逻辑

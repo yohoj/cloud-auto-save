@@ -37,7 +37,8 @@ const form = reactive({
   enableTaskScraper: false,
   enableCron: false,
   cronExpression: '',
-  saveSubDir: true
+  saveSubDir: true,
+  replaceShareWhenNoUpdate: false
 })
 
 const matchOperators = [
@@ -111,7 +112,8 @@ function resetForm() {
     enableTaskScraper: false,
     enableCron: false,
     cronExpression: '',
-    saveSubDir: true
+    saveSubDir: true,
+    replaceShareWhenNoUpdate: false
   })
   shareFolders.value = []
   parseError.value = ''
@@ -198,7 +200,8 @@ async function submit() {
       targetRegex: form.targetRegex,
       enableTaskScraper: form.enableTaskScraper,
       selectedFolders: [form.selectedShareFolderId],
-      saveSubDir: form.saveSubDir
+      saveSubDir: form.saveSubDir,
+      replaceShareWhenNoUpdate: form.replaceShareWhenNoUpdate
     })
     if (res.success) {
       ElMessage.success('任务创建完成，已在后台开始执行')
@@ -268,6 +271,11 @@ async function submit() {
       <el-form-item label=" ">
         <el-checkbox v-model="form.saveSubDir">保存子目录</el-checkbox>
         <span class="save-subdir-hint">取消勾选则只转存当前目录下的文件，不含子目录</span>
+      </el-form-item>
+
+      <el-form-item label=" ">
+        <el-checkbox v-model="form.replaceShareWhenNoUpdate">无增量时换链</el-checkbox>
+        <span class="save-subdir-hint">没有增量剧集时用任务名称重新搜索并尝试更换分享链接</span>
       </el-form-item>
 
       <el-form-item label="总集数">

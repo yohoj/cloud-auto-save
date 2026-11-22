@@ -303,6 +303,16 @@ AppDataSource.initialize().then(async () => {
         console.error('账号网盘类型字段初始化失败:', error);
     }
 
+    try {
+        const taskColumns = await AppDataSource.query("PRAGMA table_info('task')");
+        if (!taskColumns.some(column => column.name === 'replaceShareWhenNoUpdate')) {
+            await AppDataSource.query("ALTER TABLE task ADD COLUMN replaceShareWhenNoUpdate boolean DEFAULT 0");
+            console.log('任务无增量换链字段初始化完成');
+        }
+    } catch (error) {
+        console.error('任务无增量换链字段初始化失败:', error);
+    }
+
     const accountRepo = AppDataSource.getRepository(Account);
     const taskRepo = AppDataSource.getRepository(Task);
     const commonFolderRepo = AppDataSource.getRepository(CommonFolder);

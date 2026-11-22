@@ -31,6 +31,7 @@ export interface Task {
   targetRegex?: string
   enableTaskScraper?: boolean
   saveSubDir?: boolean
+  replaceShareWhenNoUpdate?: boolean
 }
 
 export interface UpdateTaskPayload {
@@ -53,6 +54,7 @@ export interface UpdateTaskPayload {
   cronExpression?: string
   enableTaskScraper?: boolean
   saveSubDir?: boolean
+  replaceShareWhenNoUpdate?: boolean
 }
 
 export interface ShareFolder {
@@ -83,6 +85,7 @@ export interface CreateTaskPayload {
   enableTaskScraper?: boolean
   selectedFolders?: string[]
   saveSubDir?: boolean
+  replaceShareWhenNoUpdate?: boolean
 }
 
 export function getTasks(params: { status?: string; search?: string } = {}) {

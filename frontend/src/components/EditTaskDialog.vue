@@ -52,7 +52,8 @@ const form = reactive({
   enableCron: false,
   cronExpression: '',
   enableTaskScraper: false,
-  saveSubDir: true
+  saveSubDir: true,
+  replaceShareWhenNoUpdate: false
 })
 
 // 原始账号/链接，用于切换后判断是否需重选目录
@@ -114,7 +115,8 @@ async function open(task: Task) {
     enableCron: !!task.enableCron,
     cronExpression: task.cronExpression || '',
     enableTaskScraper: !!task.enableTaskScraper,
-    saveSubDir: task.saveSubDir !== false
+    saveSubDir: task.saveSubDir !== false,
+    replaceShareWhenNoUpdate: task.replaceShareWhenNoUpdate === true
   })
   original.accountId = task.accountId
   original.shareLink = task.shareLink || ''
@@ -201,6 +203,7 @@ async function submit() {
       cronExpression: form.cronExpression,
       enableTaskScraper: form.enableTaskScraper,
       saveSubDir: form.saveSubDir,
+      replaceShareWhenNoUpdate: form.replaceShareWhenNoUpdate,
       // 源目录为空时不下发，由后端默认取新分享根目录
       ...(form.shareFolderId
         ? { shareFolderId: form.shareFolderId, shareFolderName: form.shareFolderName }
@@ -246,6 +249,10 @@ async function submit() {
       <el-form-item label=" ">
         <el-checkbox v-model="form.saveSubDir">保存子目录</el-checkbox>
         <span class="save-subdir-hint">取消勾选则只转存当前目录下的文件，不含子目录</span>
+      </el-form-item>
+      <el-form-item label=" ">
+        <el-checkbox v-model="form.replaceShareWhenNoUpdate">无增量时换链</el-checkbox>
+        <span class="save-subdir-hint">没有增量剧集时用任务名称重新搜索并尝试更换分享链接</span>
       </el-form-item>
       <el-form-item label="分享源目录">
         <el-input v-model="form.shareFolderName" readonly placeholder="留空则取分享根目录">

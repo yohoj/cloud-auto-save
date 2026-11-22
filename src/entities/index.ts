@@ -200,6 +200,10 @@ export class Task {
     // 是否保存子目录（默认 true，false 时只转存当前目录下的文件）
     @Column('boolean', { nullable: true, default: true })
     saveSubDir!: boolean;
+
+    // 没有增量剧集时是否重新搜索并更换分享链接（默认 false）
+    @Column('boolean', { nullable: true, default: false })
+    replaceShareWhenNoUpdate!: boolean;
 }
 
 // 常用目录表

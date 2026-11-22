@@ -966,3 +966,182 @@ test('所有候选内容都不匹配时任务失败且不写入新链接', async
     assert.equal(task.shareLink, 'https://cloud.189.cn/t/OLDCODE');
     assert.match(sentMessages[0], /不再重试/);
 });
+
+test('勾选无增量换链时，没有增量剧集会重新搜索并保留有增量的新链接', async () => {
+    const account = { id: 1, username: 'u_test', cloudType: 'cloud189' };
+    const savedTasks = [];
+    const service = new TaskService({
+        async save(task) {
+            savedTasks.push({ ...task });
+            return task;
+        }
+    }, {
+        async findOneBy() {
+            return account;
+        }
+    });
+    service.messageUtil = {
+        sendMessage() {},
+        sendTaskMessage() {}
+    };
+    // 不触发任务完成事件，避免测试期间向外部服务推送
+    service.eventService = { emit() {} };
+    // 目标目录为空，避免真实查询
+    service.getAllFolderFiles = async () => [];
+    // 只把新链接里的第二集视为可转存
+    service._evaluateTransferCandidate = (task, file) => ({ transferable: file.name === '测试资源02.mp4' });
+    service._handleNewFiles = async () => ({ fileNameList: ['├─ 测试资源02.mp4'], fileCount: 1 });
+    service.cloudSaverSDK = {
+        enabled: true,
+        async search() {
+            return [
+                { title: '名称：测试资源 更新至2集', cloudType: 'cloud189', cloudLinks: [{ link: 'https://cloud.189.cn/t/NEWCODE' }] }
+            ];
+        }
+    };
+    const cloud = {
+        async listShareDir(shareId) {
+            if (shareId === 'old-share') {
+                return { fileListAO: { fileList: [], folderList: [] } };
+            }
+            return {
+                fileListAO: {
+                    fileList: [{ id: 'f2', name: '测试资源02.mp4', isFolder: false, size: 1024 }],
+                    folderList: []
+                }
+            };
+        },
+        async getShareInfo() {
+            return { res_code: 0, shareId: 'new-share', fileId: 'new-root', shareMode: 0, isFolder: true };
+        }
+    };
+    const originalGetService = CloudUtils.getService;
+    CloudUtils.getService = () => cloud;
+    const task = {
+        id: 51,
+        accountId: 1,
+        resourceName: '测试资源',
+        shareLink: 'https://cloud.189.cn/t/OLDCODE',
+        shareId: 'old-share',
+        shareFolderId: 'old-root',
+        shareMode: 0,
+        isFolder: true,
+        saveSubDir: true,
+        replaceShareWhenNoUpdate: true,
+        lastFileUpdateTime: new Date(),
+        currentEpisodes: 1,
+        status: 'processing',
+        retryCount: 0,
+        nextRetryTime: null
+    };
+
+    let result = '';
+    try {
+        result = await service.processTask(task);
+    } finally {
+        CloudUtils.getService = originalGetService;
+    }
+
+    assert.match(result, /追更1集/);
+    assert.equal(task.shareLink, 'https://cloud.189.cn/t/NEWCODE');
+    assert.equal(task.shareId, 'new-share');
+    assert.equal(task.shareFolderId, 'new-root');
+    assert.equal(task.status, 'processing');
+    assert.ok(savedTasks.some(saved => saved.shareLink === 'https://cloud.189.cn/t/NEWCODE'));
+});
+
+test('未勾选无增量换链时，没有增量剧集不会搜索或更换链接', async () => {
+    const account = { id: 1, username: 'u_test', cloudType: 'cloud189' };
+    const service = new TaskService({
+        async save(task) {
+            return task;
+        }
+    }, {
+        async findOneBy() {
+            return account;
+        }
+    });
+    service.messageUtil = { sendMessage() {} };
+    service.getAllFolderFiles = async () => [];
+    let searchCalls = 0;
+    service.cloudSaverSDK = {
+        enabled: true,
+        async search() {
+            searchCalls++;
+            return [{ cloudType: 'cloud189', cloudLinks: [{ link: 'https://cloud.189.cn/t/NEWCODE' }] }];
+        }
+    };
+    const cloud = {
+        async listShareDir() {
+            return { fileListAO: { fileList: [], folderList: [] } };
+        }
+    };
+    const originalGetService = CloudUtils.getService;
+    CloudUtils.getService = () => cloud;
+    const task = {
+        id: 52,
+        accountId: 1,
+        resourceName: '测试资源',
+        shareLink: 'https://cloud.189.cn/t/OLDCODE',
+        shareId: 'old-share',
+        shareFolderId: 'old-root',
+        shareMode: 0,
+        isFolder: true,
+        saveSubDir: true,
+        replaceShareWhenNoUpdate: false,
+        lastFileUpdateTime: new Date(),
+        currentEpisodes: 1,
+        status: 'processing',
+        retryCount: 0,
+        nextRetryTime: null
+    };
+
+    try {
+        await service.processTask(task);
+    } finally {
+        CloudUtils.getService = originalGetService;
+    }
+
+    assert.equal(searchCalls, 0);
+    assert.equal(task.shareLink, 'https://cloud.189.cn/t/OLDCODE');
+});
+
+test('无增量换链的候选都没有增量时恢复原链接，避免来回切换', async () => {
+    const { service, savedTasks } = createTaskService();
+    service.cloudSaverSDK = { enabled: true };
+    service.cloudUtils = {
+        getShareLinkCloudType: () => 'cloud189',
+        parseCloudShare: link => ({ url: link, accessCode: '' }),
+        parseShareCode: link => link.split('/').pop()
+    };
+    const attempted = [];
+    service._searchReplacementShareLinks = async () => [
+        { link: 'https://cloud.189.cn/t/NEWCODE', title: '名称：测试资源 更新至2集' },
+        { link: 'https://cloud.189.cn/t/SECOND', title: '名称：测试资源 更新至1集' }
+    ];
+    service._applyReplacementShareLink = async (task, link) => {
+        attempted.push(link);
+        task.shareLink = link;
+        task.shareId = `${link.split('/').pop()}-share`;
+        return link;
+    };
+    // 候选链接同样没有增量剧集
+    service.processTask = async () => '';
+    const task = {
+        id: 53,
+        shareLink: 'https://cloud.189.cn/t/OLDCODE',
+        shareId: 'old-share',
+        shareFolderId: 'old-root',
+        shareMode: 0,
+        status: 'processing'
+    };
+
+    const result = await service._tryReplaceShareWhenNoUpdate(task);
+
+    assert.equal(result.replaced, false);
+    assert.deepEqual(attempted, ['https://cloud.189.cn/t/NEWCODE', 'https://cloud.189.cn/t/SECOND']);
+    assert.equal(task.shareLink, 'https://cloud.189.cn/t/OLDCODE');
+    assert.equal(task.shareId, 'old-share');
+    assert.equal(savedTasks.length, 1);
+    assert.equal(task._noUpdateReplacementInProgress, undefined);
+});

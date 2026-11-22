@@ -22,6 +22,7 @@ class CreateTaskDto {
         this.enableTaskScraper = data?.enableTaskScraper; // 启用刮削
         this.enableSystemProxy = data?.enableSystemProxy; // 启用系统代理
         this.isFolder = data?.isFolder; // 是否是文件夹
+        this.replaceShareWhenNoUpdate = data?.replaceShareWhenNoUpdate === true; // 无增量时重新搜索换链
     }
 
     validate() {
